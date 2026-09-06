@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TVProxy</string>
+    <string name="app_subtitle">智慧屏全局网络代理</string>
+    <string name="status_label">代理状态</string>
+    <string name="status_idle">未开启</string>
+    <string name="status_running">运行中</string>
+    <string name="status_denied">未授予 VPN 权限</string>
+    <string name="vpn_denied_help">系统 VPN 授权未通过。请看屏幕上是否弹出「允许创建 VPN 连接」，用遥控器选「确定 / 允许」。若没有弹窗，到电视「设置」里搜索「VPN」或「应用权限」，允许 TVProxy 后再回到本页点「保存并启动」。</string>
+    <string name="vpn_denied_restricted">系统禁止配置 VPN（DISALLOW_CONFIG_VPN）。这台智慧屏可能未开放 VpnService 授权，无法建立全局代理。</string>
+    <string name="vpn_prepare_failed">无法打开系统 VPN 授权：%1$s</string>
+    <string name="vpn_start_failed">启动失败：%1$s</string>
+    <string name="vpn_establish_no_consent">无法建立虚拟网卡：系统未授权 VPN。智慧屏没有 VPN 授权窗口。\n\n开发者选项里是「HDC 调试」（不是 USB 调试）。电脑用 hdc 连接后执行：\n  tool\\grant-vpn.bat\n或先填电视 IP：\n  tool\\grant-vpn.bat 192.168.x.x\n成功后再点「保存并启动」。</string>
+    <string name="vpn_establish_rejected">无法建立虚拟网卡：系统拒绝创建 TUN。</string>
+    <string name="vpn_establish_failed">建立虚拟网卡失败：%1$s</string>
+    <string name="vpn_native_failed">native 启动失败：%1$s</string>
+    <string name="crash_last">上次闪退原因：\n%1$s</string>
+    <string name="crash_native_hint">上次点「保存并启动」后进程异常退出。请再试一次；若仍闪退，把本页红色报错原文记下。</string>
+    <string name="lan_label">本机局域网地址</string>
+    <string name="lan_unknown">—</string>
+    <string name="hint_dpad">方向键移动焦点 · OK 确认 / 调起键盘</string>
+    <string name="settings_title">代理设置</string>
+    <string name="settings_sub">保存后将本机全部流量转发到上游。不支持认证。</string>
+    <string name="label_protocol">代理类型</string>
+    <string name="label_host">服务器地址</string>
+    <string name="label_port">端口</string>
+    <string name="hint_host">10.0.2.2</string>
+    <string name="btn_save_start">保存并启动</string>
+    <string name="btn_save_restart">保存并重启</string>
+    <string name="btn_stop">停止代理</string>
+    <string name="error_host">请填写服务器地址</string>
+    <string name="error_port">端口须为 1–65535</string>
+    <string name="vpn_explain_title">接下来需要系统授权 VPN</string>
+    <string name="vpn_explain_body">下一步会弹出系统窗口「允许 TVProxy 创建 VPN 连接」。这不是本应用自己的提示，请用遥控器在系统窗口里选「确定 / 允许」。没有弹窗就按返回，再到「设置」里搜索 VPN。</string>
+    <string name="vpn_explain_cancel">取消</string>
+    <string name="vpn_explain_allow">下一步</string>
+    <string name="notif_channel">VPN</string>
+    <string name="notif_title">TVProxy</string>
+    <string name="notif_text">TVProxy 运行中</string>
+    <string name="keepalive_title">开启后台运行以保持代理连接</string>
+    <string name="keepalive_body">若 TVProxy 在切换应用或待机一段时间后被系统清理、代理随之停止，请在电视「设置 → 应用 → TVProxy → 应用启动管理」中允许其后台运行与联网（适配鸿蒙 2.0）。</string>
+    <string name="keepalive_ok">我知道了</string>
+    <string-array name="protocols">
+        <item>SOCKS5</item>
+        <item>HTTP</item>
+    </string-array>
+</resources>

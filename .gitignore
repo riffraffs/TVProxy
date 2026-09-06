@@ -1,0 +1,37 @@
+# --- Gradle / Android build outputs ---
+.gradle/
+**/build/
+app/.cxx/
+captures/
+*.apk
+*.aab
+*.ap_
+
+# --- IDE / assistant tool state ---
+.idea/
+*.iml
+.DS_Store
+.workbuddy/
+
+# --- Machine-specific local config ---
+local.properties
+local.properties.bak
+
+# --- Repo-root scratch & logs (dev leftovers, not project material) ---
+*.log
+tt.c
+hev-rbtree-test.o
+proto_check.js
+tvproxy_ui.png
+
+# --- Packaged APKs (rebuildable from source) ---
+dist/
+
+# --- Local tooling: whole tree excluded, then re-include what is worth backing up ---
+/tool/*
+!/tool/*.bat
+!/tool/*.ps1
+!/tool/*.sh
+!/tool/hdc/
+!/tool/hdc/*.exe
+!/tool/hdc/*.dll

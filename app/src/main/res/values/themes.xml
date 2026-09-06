@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- P0 uses a plain activity, not BrowseSupportFragment. Theme.Leanback
+         paints an empty black window over setContentView layouts. -->
+    <style name="Theme.TVProxy" parent="@android:style/Theme.NoTitleBar.Fullscreen">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:textColor">@color/on_background</item>
+    </style>
+</resources>
