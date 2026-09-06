@@ -14,14 +14,13 @@ import android.os.Bundle
 import android.os.UserManager
 import android.text.method.ScrollingMovementMethod
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.Spinner
 import android.widget.TextView
 
 class MainActivity : Activity() {
@@ -29,7 +28,8 @@ class MainActivity : Activity() {
     private lateinit var pill: LinearLayout
     private lateinit var pillLed: ImageView
     private lateinit var lanIp: TextView
-    private lateinit var protocol: Spinner
+    private lateinit var protocolRow: LinearLayout
+    private lateinit var protocolValue: TextView
     private lateinit var host: EditText
     private lateinit var port: EditText
     private lateinit var errorView: TextView
@@ -55,7 +55,8 @@ class MainActivity : Activity() {
         pill = findViewById(R.id.pill)
         pillLed = findViewById(R.id.pill_led)
         lanIp = findViewById(R.id.lan_ip)
-        protocol = findViewById(R.id.protocol)
+        protocolRow = findViewById(R.id.protocol)
+        protocolValue = findViewById(R.id.protocol_value)
         host = findViewById(R.id.host)
         port = findViewById(R.id.port)
         errorView = findViewById(R.id.error)
@@ -63,13 +64,20 @@ class MainActivity : Activity() {
         saveBtn = findViewById(R.id.btn_save)
         stopBtn = findViewById(R.id.btn_stop)
 
-        val adapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.protocols,
-            R.layout.item_protocol,
-        )
-        adapter.setDropDownViewResource(R.layout.item_protocol_dropdown)
-        protocol.adapter = adapter
+        protocolRow.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    cycleProtocol(-1)
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    cycleProtocol(1)
+                    true
+                }
+                else -> false
+            }
+        }
 
         bindConfig(ProxyPrefs.load(this))
         lanIp.text = LanAddress.ipv4() ?: getString(R.string.lan_unknown)
@@ -77,7 +85,7 @@ class MainActivity : Activity() {
         stopBtn.setOnClickListener { stopVpn() }
         wireEditor(host)
         wireEditor(port)
-        protocol.requestFocus()
+        protocolRow.requestFocus()
         refreshStatus()
         CrashLog.consume(this)?.let { showError(getString(R.string.crash_last, it)) }
         if (errorView.visibility != View.VISIBLE && ProxyPrefs.hadUnfinishedStart(this)) {
@@ -142,7 +150,7 @@ class MainActivity : Activity() {
     private fun onSave() {
         hideIme()
         val config = ProxyConfig.fromUi(
-            protocol.selectedItem?.toString().orEmpty(),
+            protocolValue.text.toString(),
             host.text.toString(),
             port.text.toString(),
         )
@@ -313,9 +321,22 @@ class MainActivity : Activity() {
     }
 
     private fun bindConfig(config: ProxyConfig) {
-        protocol.setSelection(if (config.protocol == ProxyConfig.PROTOCOL_HTTP) 1 else 0)
+        protocolValue.text = protocolLabel(config.protocol)
         host.setText(config.host)
         port.setText(config.port.toString())
+    }
+
+    private fun protocolLabel(protocol: String): String {
+        val labels = resources.getStringArray(R.array.protocols)
+        return labels[if (protocol == ProxyConfig.PROTOCOL_HTTP) 1 else 0]
+    }
+
+    private fun cycleProtocol(dir: Int) {
+        val labels = resources.getStringArray(R.array.protocols)
+        var i = labels.indexOf(protocolValue.text.toString())
+        if (i < 0) i = 0
+        i = (i + dir + labels.size) % labels.size
+        protocolValue.text = labels[i]
     }
 
     private fun refreshStatus() {

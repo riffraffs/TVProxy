@@ -40,8 +40,10 @@
     <string name="keepalive_title">开启后台运行以保持代理连接</string>
     <string name="keepalive_body">若 TVProxy 在切换应用或待机一段时间后被系统清理、代理随之停止，请在电视「设置 → 应用 → TVProxy → 应用启动管理」中允许其后台运行与联网（适配鸿蒙 2.0）。</string>
     <string name="keepalive_ok">我知道了</string>
+    <string name="protocol_socks5">SOCKS5</string>
+    <string name="protocol_http">HTTP</string>
     <string-array name="protocols">
-        <item>SOCKS5</item>
-        <item>HTTP</item>
+        <item>@string/protocol_socks5</item>
+        <item>@string/protocol_http</item>
     </string-array>
 </resources>

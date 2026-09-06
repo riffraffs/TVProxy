@@ -157,6 +157,7 @@ app/src/main/
 | P6 真机验收 | 部分完成：华为 THAL-560 冒烟通过（授权、保存启动不闪退、国内/国外站点可访问，0.1.13）；保活时长等留待正式验收 |
 | 真机闪退（native protect 调用） | 已修复：不对上游 socket 调 `VpnService.protect()`（0.1.11） |
 | 国外网站打不开（DNS 污染） | 已修复：VPN DNS 改 8.8.8.8 / 1.1.1.1，查询经 Clash 代理出口解析（0.1.13） |
+| 代理类型 UI 对齐原型 | 已完成（0.1.14）：下拉框改为原型左右箭头步进；类型行获焦时遥控器左右键循环 SOCKS5/HTTP，上下键照常移焦点；真机 THAL-560 验证切换/环绕/保存持久化（logcat `establishing tun for http …`） |
 
 下一步：HTTP CONNECT。不做：认证、电视侧分流、CMake、手机版 UI。
-P6 遗留：保活时长、720p/1080p/4K 分辨率与 Release 签名 APK 尚未验收。编译经 ASCII 目录 `C:\TVProxy` + `tool\env.bat` 已可正常出包（`dist\TVProxy-0.1.13-...apk`）。
+P6 遗留：保活时长、720p/1080p/4K 分辨率与 Release 签名 APK 尚未验收。编译经 ASCII 目录 `C:\TVProxy` + `tool\env.bat` 已可正常出包（最新 `dist\TVProxy-0.1.14-arm64-v8a-debug.apk`）。
