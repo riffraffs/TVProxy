@@ -24,11 +24,10 @@
     <string name="label_protocol">代理类型</string>
     <string name="label_host">服务器地址</string>
     <string name="label_port">端口</string>
-    <string name="hint_host">10.0.2.2</string>
     <string name="btn_save_start">保存并启动</string>
     <string name="btn_save_restart">保存并重启</string>
     <string name="btn_stop">停止代理</string>
-    <string name="error_host">请填写服务器地址</string>
+    <string name="error_host">服务器地址须为 IPv4（如 192.168.3.51，每段 0–255）</string>
     <string name="error_port">端口须为 1–65535</string>
     <string name="vpn_explain_title">需要系统 VPN 授权</string>
     <string name="vpn_explain_body">随后请在弹出的系统窗口选择「允许」。没有弹窗请到系统设置开启 VPN 权限。</string>

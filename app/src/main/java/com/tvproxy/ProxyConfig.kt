@@ -6,9 +6,18 @@ data class ProxyConfig(
     val port: Int = 10800,
 ) {
     fun validate(): Int? {
-        if (host.isBlank()) return R.string.error_host
+        if (!isValidIpv4(host)) return R.string.error_host
         if (port !in 1..65535) return R.string.error_port
         return null
+    }
+
+    /** IPv4 only by design (TV input uses four octet segments); hostnames are not supported. */
+    private fun isValidIpv4(value: String): Boolean {
+        val parts = value.split('.')
+        if (parts.size != 4) return false
+        return parts.all { part ->
+            part.isNotEmpty() && part.length <= 3 && part.all { it.isDigit() } && part.toInt() in 0..255
+        }
     }
 
     companion object {

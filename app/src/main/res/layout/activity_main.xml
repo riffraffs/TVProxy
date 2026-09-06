@@ -176,7 +176,7 @@
                 android:background="@drawable/row_tv"
                 android:focusable="true"
                 android:gravity="center_vertical"
-                android:nextFocusDown="@id/host"
+                android:nextFocusDown="@id/octet1"
                 android:orientation="horizontal"
                 android:paddingStart="18dp"
                 android:paddingEnd="12dp">
@@ -253,23 +253,109 @@
                     android:textSize="16sp" />
 
                 <EditText
-                    android:id="@+id/host"
+                    android:id="@+id/octet1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
                     android:background="@null"
-                    android:gravity="end|center_vertical"
-                    android:hint="@string/hint_host"
+                    android:digits="0123456789"
+                    android:gravity="center"
                     android:imeOptions="actionNext|flagNoExtractUi"
                     android:importantForAutofill="no"
-                    android:inputType="textUri|textNoSuggestions"
-                    android:maxLength="64"
+                    android:inputType="number"
+                    android:maxLength="3"
                     android:nextFocusDown="@id/port"
                     android:nextFocusUp="@id/protocol"
                     android:selectAllOnFocus="true"
                     android:textColor="@color/on_background"
                     android:textColorHighlight="@color/selection"
-                    android:textColorHint="@color/faint"
+                    android:textSize="20sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingStart="3dp"
+                    android:paddingEnd="3dp"
+                    android:text="."
+                    android:textColor="@color/faint"
+                    android:textSize="22sp" />
+
+                <EditText
+                    android:id="@+id/octet2"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@null"
+                    android:digits="0123456789"
+                    android:gravity="center"
+                    android:imeOptions="actionNext|flagNoExtractUi"
+                    android:importantForAutofill="no"
+                    android:inputType="number"
+                    android:maxLength="3"
+                    android:nextFocusDown="@id/port"
+                    android:nextFocusUp="@id/protocol"
+                    android:selectAllOnFocus="true"
+                    android:textColor="@color/on_background"
+                    android:textColorHighlight="@color/selection"
+                    android:textSize="20sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingStart="3dp"
+                    android:paddingEnd="3dp"
+                    android:text="."
+                    android:textColor="@color/faint"
+                    android:textSize="22sp" />
+
+                <EditText
+                    android:id="@+id/octet3"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@null"
+                    android:digits="0123456789"
+                    android:gravity="center"
+                    android:imeOptions="actionNext|flagNoExtractUi"
+                    android:importantForAutofill="no"
+                    android:inputType="number"
+                    android:maxLength="3"
+                    android:nextFocusDown="@id/port"
+                    android:nextFocusUp="@id/protocol"
+                    android:selectAllOnFocus="true"
+                    android:textColor="@color/on_background"
+                    android:textColorHighlight="@color/selection"
+                    android:textSize="20sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingStart="3dp"
+                    android:paddingEnd="3dp"
+                    android:text="."
+                    android:textColor="@color/faint"
+                    android:textSize="22sp" />
+
+                <EditText
+                    android:id="@+id/octet4"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@null"
+                    android:digits="0123456789"
+                    android:gravity="center"
+                    android:imeOptions="actionDone|flagNoExtractUi"
+                    android:importantForAutofill="no"
+                    android:inputType="number"
+                    android:maxLength="3"
+                    android:nextFocusDown="@id/port"
+                    android:nextFocusUp="@id/protocol"
+                    android:selectAllOnFocus="true"
+                    android:textColor="@color/on_background"
+                    android:textColorHighlight="@color/selection"
                     android:textSize="20sp" />
             </LinearLayout>
 
@@ -304,7 +390,7 @@
                     android:importantForAutofill="no"
                     android:inputType="number"
                     android:nextFocusDown="@id/btn_save"
-                    android:nextFocusUp="@id/host"
+                    android:nextFocusUp="@id/octet4"
                     android:selectAllOnFocus="true"
                     android:textColor="@color/on_background"
                     android:textColorHighlight="@color/selection"

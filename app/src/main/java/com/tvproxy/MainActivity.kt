@@ -18,6 +18,7 @@ import android.text.method.ScrollingMovementMethod
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
@@ -32,7 +33,7 @@ class MainActivity : Activity() {
     private lateinit var lanIp: TextView
     private lateinit var protocolRow: LinearLayout
     private lateinit var protocolValue: TextView
-    private lateinit var host: EditText
+    private lateinit var octets: List<EditText>
     private lateinit var port: EditText
     private lateinit var errorView: TextView
     private lateinit var saveBtn: Button
@@ -59,7 +60,12 @@ class MainActivity : Activity() {
         lanIp = findViewById(R.id.lan_ip)
         protocolRow = findViewById(R.id.protocol)
         protocolValue = findViewById(R.id.protocol_value)
-        host = findViewById(R.id.host)
+        octets = listOf(
+            findViewById(R.id.octet1),
+            findViewById(R.id.octet2),
+            findViewById(R.id.octet3),
+            findViewById(R.id.octet4),
+        )
         port = findViewById(R.id.port)
         errorView = findViewById(R.id.error)
         errorView.movementMethod = ScrollingMovementMethod.getInstance()
@@ -85,7 +91,11 @@ class MainActivity : Activity() {
         lanIp.text = LanAddress.ipv4() ?: getString(R.string.lan_unknown)
         saveBtn.setOnClickListener { onSave() }
         stopBtn.setOnClickListener { stopVpn() }
-        wireEditor(host)
+        octets.forEachIndexed { i, edit ->
+            wireEditor(edit)
+            wireSegmentNav(i, edit)
+        }
+        chainOctetIme()
         wireEditor(port)
         protocolRow.requestFocus()
         refreshStatus()
@@ -151,9 +161,15 @@ class MainActivity : Activity() {
 
     private fun onSave() {
         hideIme()
+        val host = octets.joinToString(".") { part ->
+            // Normalize each octet (drop leading zeros); invalid text stays so
+            // ProxyConfig.validate can report the specific error.
+            val t = part.text.toString().trim()
+            t.toIntOrNull()?.toString() ?: t
+        }
         val config = ProxyConfig.fromUi(
             protocolValue.text.toString(),
-            host.text.toString(),
+            host,
             port.text.toString(),
         )
         val err = config.validate()
@@ -331,7 +347,10 @@ class MainActivity : Activity() {
 
     private fun bindConfig(config: ProxyConfig) {
         protocolValue.text = protocolLabel(config.protocol)
-        host.setText(config.host)
+        val parts = config.host.split('.')
+        octets.forEachIndexed { i, edit ->
+            edit.setText(if (i < parts.size) parts[i] else "")
+        }
         port.setText(config.port.toString())
     }
 
@@ -411,6 +430,49 @@ class MainActivity : Activity() {
             showIme(edit)
             edit.post(selectAll)
             edit.postDelayed(selectAll, 80)
+        }
+    }
+
+    /**
+     * Octet segments: DPAD left/right always hops to the neighbor segment instead of
+     * letting EditText swallow the key to move the in-field caret/selection (which would
+     * take extra presses to cross all four segments). Up/down is left to normal focus
+     * navigation (protocol row above, port below).
+     */
+    private fun wireSegmentNav(index: Int, edit: EditText) {
+        edit.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    moveToSegment(index - 1)
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    moveToSegment(index + 1)
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun moveToSegment(index: Int) {
+        if (index !in octets.indices) return
+        octets[index].requestFocus()
+    }
+
+    /** Keyboard "Next" on segments 1-3 jumps to the next segment instead of the port row. */
+    private fun chainOctetIme() {
+        for (i in 0 until octets.size - 1) {
+            val next = octets[i + 1]
+            octets[i].setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_NEXT) {
+                    showIme(next)
+                    true
+                } else {
+                    false
+                }
+            }
         }
     }
 

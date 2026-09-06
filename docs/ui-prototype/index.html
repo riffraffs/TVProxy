@@ -244,6 +244,15 @@
     }
     .row input::placeholder { color: var(--faint); }
 
+    .row .value.seg { gap: 2px; }
+    .row .value.seg input {
+      flex: 1 1 0;
+      min-width: 40px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .value.seg .dot { color: var(--faint); font-size: 20px; }
+
     .actions {
       margin-top: auto;
       padding-top: 22px;
@@ -348,7 +357,6 @@
       display: grid;
       gap: 8px;
     }
-    .keys.qwerty { grid-template-columns: repeat(10, 1fr); }
     .keys.num { grid-template-columns: repeat(6, 1fr); max-width: 720px; margin: 0 auto; }
     .key {
       height: 48px;
@@ -366,7 +374,6 @@
       border-color: #9ec2ff;
       transform: scale(1.06);
     }
-    .key.wide { grid-column: span 2; }
     .key.ok { background: var(--brand); }
 
     .stepper { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
@@ -494,7 +501,15 @@
               </div>
               <div class="row" data-id="host" tabindex="-1" data-page-node-id="slCPddeJmLwu9bfaFsU8Vh">
                 <div class="label" data-page-node-id="TUoJOKQemazLGYV6Vxct1N">服务器地址</div>
-                <div class="value" data-page-node-id="ltGfSqwn9EhqlHMMHnuBN7"><input id="host" value="10.0.2.2" maxlength="64" spellcheck="false" data-page-node-id="OEoYjP7y5OhnhBQaYuzUD0" /></div>
+                <div class="value seg" data-page-node-id="ltGfSqwn9EhqlHMMHnuBN7">
+                  <input id="host1" value="10" maxlength="3" inputmode="numeric" spellcheck="false" data-page-node-id="OEoYjP7y5OhnhBQaYuzUD0" />
+                  <span class="dot" data-page-node-id="ltGfSqwn9EhqlHMMHnuBN8">.</span>
+                  <input id="host2" value="0" maxlength="3" inputmode="numeric" spellcheck="false" data-page-node-id="OEoYjP7y5OhnhBQaYuzUD1" />
+                  <span class="dot" data-page-node-id="ltGfSqwn9EhqlHMMHnuBN9">.</span>
+                  <input id="host3" value="2" maxlength="3" inputmode="numeric" spellcheck="false" data-page-node-id="OEoYjP7y5OhnhBQaYuzUD2" />
+                  <span class="dot" data-page-node-id="ltGfSqwn9EhqlHMMHnuBN10">.</span>
+                  <input id="host4" value="2" maxlength="3" inputmode="numeric" spellcheck="false" data-page-node-id="OEoYjP7y5OhnhBQaYuzUD3" />
+                </div>
               </div>
               <div class="row" data-id="port" tabindex="-1" data-page-node-id="adDUtzmN09059tDmQRkC1J">
                 <div class="label" data-page-node-id="MPzqxTKpcAQOCgNJYlzpIG">端口</div>
@@ -545,6 +560,7 @@
       running: false,
       authorized: false,
       protocol: "SOCKS5",
+      hostSeg: 0,
       overlay: null, // dialog | ime
       imeTarget: null,
       dlgIndex: 1,
@@ -554,8 +570,13 @@
 
     const $ = (s) => document.querySelector(s);
     const screen = $("#screen");
-    const hostEl = $("#host");
+    const hostEls = ["host1", "host2", "host3", "host4"].map((id) => document.getElementById(id));
     const portEl = $("#port");
+
+    function hostValue() { return hostEls.map((e) => e.value).join("."); }
+    function hostOk() {
+      return hostEls.every((e) => /^\d{1,3}$/.test(e.value) && Number(e.value) <= 255);
+    }
 
     function el(id) { return document.querySelector(`[data-id="${id}"]`); }
 
@@ -563,9 +584,9 @@
       document.querySelectorAll(".row, .btn").forEach((n) => n.classList.remove("is-focus"));
       const node = el(state.focus);
       if (node) node.classList.add("is-focus");
-      if (state.focus === "host") hostEl.focus({ preventScroll: true });
+      if (state.focus === "host") hostEls[state.hostSeg].focus({ preventScroll: true });
       else if (state.focus === "port") portEl.focus({ preventScroll: true });
-      else { hostEl.blur(); portEl.blur(); }
+      else { hostEls.forEach((e) => e.blur()); portEl.blur(); }
     }
 
     function toast(text) {
@@ -587,7 +608,7 @@
       pill.classList.toggle("on", on);
       $("#pillText").textContent = on ? "运行中" : "未开启";
       $("#footState").textContent = on
-        ? `${state.protocol}  ${hostEl.value}:${portEl.value}`
+        ? `${state.protocol}  ${hostValue()}:${portEl.value}`
         : "未连接 VPN";
       const save = el("save");
       const stop = el("stop");
@@ -602,7 +623,7 @@
       state.protocol = ORDER[i];
       $("#protocolVal").textContent = state.protocol;
       if (state.running) {
-        $("#footState").textContent = `${state.protocol}  ${hostEl.value}:${portEl.value}`;
+        $("#footState").textContent = `${state.protocol}  ${hostValue()}:${portEl.value}`;
       }
     }
 
@@ -617,20 +638,16 @@
     }
     function closeDialog() { $("#mask").classList.remove("show"); state.overlay = null; }
 
-    const QWERTY = "1234567890qwertyuiopasdfghjkl.zxcvbnm:_-".split("");
-
     function openIme(target) {
       state.overlay = "ime";
       state.imeTarget = target;
       state.keyIndex = 0;
-      const numeric = target === "port";
-      state.keys = numeric ? ["1","2","3","4","5","6","7","8","9","⌫","0","完成"] : [...QWERTY, "⌫", "空格", "完成"];
-      $("#imeTitle").textContent = numeric ? "输入端口" : "输入服务器地址";
+      state.keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "完成"];
+      $("#imeTitle").textContent = target === "port" ? "输入端口" : "输入服务器地址";
       const box = $("#keys");
-      box.className = "keys " + (numeric ? "num" : "qwerty");
+      box.className = "keys num";
       box.innerHTML = state.keys.map((k) => {
-        const wide = !numeric && (k === "完成" || k === "空格" || k === "⌫");
-        return `<div class="key${wide ? " wide" : ""}${k === "完成" ? " ok" : ""}">${k}</div>`;
+        return `<div class="key${k === "完成" ? " ok" : ""}">${k}</div>`;
       }).join("");
       $("#sheet").classList.add("show");
       paintKeys();
@@ -641,12 +658,12 @@
     function closeIme() { $("#sheet").classList.remove("show"); state.overlay = null; paintFocus(); }
 
     function typeKey(k) {
-      const input = state.imeTarget === "port" ? portEl : hostEl;
+      const input = state.imeTarget === "port" ? portEl : hostEls[state.hostSeg];
       if (k === "完成") { closeIme(); return; }
       if (k === "⌫") { input.value = input.value.slice(0, -1); return; }
-      if (k === "空格") { input.value += " "; return; }
-      if (state.imeTarget === "port" && !/^\d$/.test(k)) return;
-      if (state.imeTarget === "port" && input.value.length >= 5) return;
+      if (!/^\d$/.test(k)) return;
+      const max = state.imeTarget === "port" ? 5 : 3;
+      if (input.value.length >= max) return;
       input.value += k;
     }
 
@@ -660,7 +677,7 @@
       if (state.focus === "host") openIme("host");
       else if (state.focus === "port") openIme("port");
       else if (state.focus === "save") {
-        if (!hostEl.value.trim() || !portEl.value.trim()) { toast("请填写地址和端口"); return; }
+        if (!hostOk() || !portEl.value.trim()) { toast("请填写地址和端口"); return; }
         if (!state.authorized) openDialog();
         else startVpn();
       } else if (state.focus === "stop" && state.running) {
@@ -678,7 +695,7 @@
         return;
       }
       if (state.overlay === "ime") {
-        const cols = state.imeTarget === "port" ? 6 : 10;
+        const cols = 6;
         const n = state.keys.length;
         if (dir === "left") state.keyIndex = (state.keyIndex + n - 1) % n;
         if (dir === "right") state.keyIndex = (state.keyIndex + 1) % n;
@@ -689,6 +706,11 @@
       }
       if (state.focus === "protocol" && (dir === "left" || dir === "right")) {
         stepProtocol(dir === "right" ? 1 : -1);
+        return;
+      }
+      if (state.focus === "host" && (dir === "left" || dir === "right")) {
+        state.hostSeg = Math.max(0, Math.min(3, state.hostSeg + (dir === "right" ? 1 : -1)));
+        paintFocus();
         return;
       }
       const i = ids.indexOf(state.focus);
@@ -726,6 +748,9 @@
         paintFocus();
         onActivate();
       });
+    });
+    hostEls.forEach((inp, i) => {
+      inp.addEventListener("focus", () => { state.hostSeg = i; });
     });
     document.querySelectorAll(".d-btn").forEach((b, i) => {
       b.addEventListener("click", () => {
