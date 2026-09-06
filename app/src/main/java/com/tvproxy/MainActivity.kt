@@ -8,6 +8,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
@@ -170,7 +172,7 @@ class MainActivity : Activity() {
 
     private fun showExplainDialog() {
         try {
-            val dialog = Dialog(this)
+            val dialog = newDialog()
             dialog.setContentView(R.layout.dialog_vpn_explain)
             dialog.findViewById<Button>(R.id.dlg_cancel).setOnClickListener { dialog.dismiss() }
             dialog.findViewById<Button>(R.id.dlg_allow).setOnClickListener {
@@ -183,6 +185,13 @@ class MainActivity : Activity() {
         } catch (e: Throwable) {
             CrashLog.write(this, e)
             showError(getString(R.string.vpn_start_failed, e.message ?: e.javaClass.simpleName))
+        }
+    }
+
+    /** Dialog with no system window frame, so the custom card is the only visible surface. */
+    private fun newDialog(): Dialog {
+        return Dialog(this, R.style.Theme_TVProxy_Dialog).apply {
+            window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         }
     }
 
@@ -366,7 +375,7 @@ class MainActivity : Activity() {
         if (ProxyPrefs.wasKeepAliveHintShown(this)) return
         if (isFinishing || isDestroyed) return
         ProxyPrefs.setKeepAliveHintShown(this)
-        val dialog = Dialog(this)
+        val dialog = newDialog()
         dialog.setContentView(R.layout.dialog_keepalive)
         dialog.findViewById<Button>(R.id.dlg_keepalive_ok).setOnClickListener {
             dialog.dismiss()

@@ -158,6 +158,7 @@ app/src/main/
 | 真机闪退（native protect 调用） | 已修复：不对上游 socket 调 `VpnService.protect()`（0.1.11） |
 | 国外网站打不开（DNS 污染） | 已修复：VPN DNS 改 8.8.8.8 / 1.1.1.1，查询经 Clash 代理出口解析（0.1.13） |
 | 代理类型 UI 对齐原型 | 已完成（0.1.14）：下拉框改为原型左右箭头步进；类型行获焦时遥控器左右键循环 SOCKS5/HTTP，上下键照常移焦点；真机 THAL-560 验证切换/环绕/保存持久化（logcat `establishing tun for http …`） |
+| 首启弹窗文案与白框 | 已完成（0.1.15）：说明正文 4+ 行精简到 2 行；Dialog 改用透明窗口背景主题（`Theme.TVProxy.Dialog`）去掉鸿蒙 TV 默认窗框——真机逐像素确认卡片外侧浅灰辉光环消失，模拟器+真机均验证 |
 
 下一步：HTTP CONNECT。不做：认证、电视侧分流、CMake、手机版 UI。
-P6 遗留：保活时长、720p/1080p/4K 分辨率与 Release 签名 APK 尚未验收。编译经 ASCII 目录 `C:\TVProxy` + `tool\env.bat` 已可正常出包（最新 `dist\TVProxy-0.1.14-arm64-v8a-debug.apk`）。
+P6 遗留：保活时长、720p/1080p/4K 分辨率与 Release 签名 APK 尚未验收。编译经 ASCII 目录 `C:\TVProxy` + `tool\env.bat` 已可正常出包（最新 `dist\TVProxy-0.1.15-arm64-v8a-debug.apk`）。

@@ -7,4 +7,11 @@
         <item name="android:colorBackground">@color/background</item>
         <item name="android:textColor">@color/on_background</item>
     </style>
+
+    <!-- 自绘卡片作弹窗外观：去掉系统默认窗框，避免鸿蒙 TV 在自定义卡片外再画一圈浅色描边/辉光。 -->
+    <style name="Theme.TVProxy.Dialog" parent="@android:style/Theme.DeviceDefault.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowFrame">@null</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
 </resources>

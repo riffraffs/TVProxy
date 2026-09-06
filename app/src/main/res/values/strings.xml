@@ -30,8 +30,8 @@
     <string name="btn_stop">停止代理</string>
     <string name="error_host">请填写服务器地址</string>
     <string name="error_port">端口须为 1–65535</string>
-    <string name="vpn_explain_title">接下来需要系统授权 VPN</string>
-    <string name="vpn_explain_body">下一步会弹出系统窗口「允许 TVProxy 创建 VPN 连接」。这不是本应用自己的提示，请用遥控器在系统窗口里选「确定 / 允许」。没有弹窗就按返回，再到「设置」里搜索 VPN。</string>
+    <string name="vpn_explain_title">需要系统 VPN 授权</string>
+    <string name="vpn_explain_body">随后请在弹出的系统窗口选择「允许」。没有弹窗请到系统设置开启 VPN 权限。</string>
     <string name="vpn_explain_cancel">取消</string>
     <string name="vpn_explain_allow">下一步</string>
     <string name="notif_channel">VPN</string>
