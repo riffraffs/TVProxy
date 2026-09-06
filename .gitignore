@@ -23,6 +23,7 @@ tt.c
 hev-rbtree-test.o
 proto_check.js
 tvproxy_ui.png
+real_tvproxy_ui.png
 
 # --- Packaged APKs (rebuildable from source) ---
 dist/
