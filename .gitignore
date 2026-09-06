@@ -27,11 +27,9 @@ tvproxy_ui.png
 # --- Packaged APKs (rebuildable from source) ---
 dist/
 
-# --- Local tooling: whole tree excluded, then re-include what is worth backing up ---
-/tool/*
-!/tool/*.bat
-!/tool/*.ps1
-!/tool/*.sh
-!/tool/hdc/
-!/tool/hdc/*.exe
-!/tool/hdc/*.dll
+# --- Debug scripts & local tooling (machine-specific, not project source) ---
+run_build.bat
+run_emu.bat
+ui_build.init.gradle
+/adb/
+/tool/

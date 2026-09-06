@@ -1,9 +1,0 @@
-gradle.projectsEvaluated {
-    rootProject.allprojects { p ->
-        p.tasks.configureEach { t ->
-            if (t.name.contains("NdkBuild") || t.name.contains("ExternalNative")) {
-                t.enabled = false
-            }
-        }
-    }
-}
