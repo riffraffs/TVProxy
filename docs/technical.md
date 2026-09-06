@@ -23,8 +23,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  UI 层（Leanback，遥控器可操作）                        │
-│  局域网 IP 展示 / 代理类型下拉 / 地址·端口输入 / 保存      │
+│  UI 层（TV 遥控器 DPAD 焦点）                          │
+│  局域网 IP 展示 / 代理类型步进选择 / 地址·端口输入 / 保存   │
 ├─────────────────────────────────────────────────────┤
 │  业务层（Kotlin）                                     │
 │  配置模型 ProxyConfig / 配置持久化 SharedPreferences    │
@@ -103,6 +103,8 @@ SOCKS5 CONNECT / UDP ASSOCIATE（无 HTTP CONNECT）
 
 > **约束：不对上游 socket 调 `VpnService.protect()`**（hev-socks5-session-tcp.c/-udp.c 的 bind 路径曾加过该 JNI 调用）：在鸿蒙电视上保存启动约 0.5 s 后触发原生 SIGSEGV。`addDisallowedApplication(自身)` 已保证应用自己连上游的流量绕过 tun，protect 冗余且是崩溃源，故已移除。
 
+**TCP-only 上游（无 UDP 中继）自动回落：** 部分局域网共享 SOCKS5（实测 iOS Loon「网络共享」）对 UDP ASSOCIATE 应答 `05 00` 但 BND 为 `0.0.0.0:0`（无可用中继；对照 mihomo 返回真实中继地址）。服务启动时 `UpstreamProbe` 在后台线程做一次探测（主线程会触发 NetworkOnMainThreadException）：SOCKS5 问候成功后再发 UDP ASSOCIATE，BND 全零 / 命令被拒 / 应答缺失 ⇒ 判定无 UDP，进入 **DNS-over-TCP 模式**（配置写 `misc.dns-over-tcp: true`）；连接/问候阶段失败则保守按「支持 UDP」处理，既有上游（Clash 等）行为零回归。模式由 native 配置项 `dns-over-tcp` 控制（`hev-config.c`）。开启后 tun 读循环拦截目标 UDP:53 的查询包（新增 `hev-dns-tcp.c`，在 lwIP 之前消费，不进入 lwIP/UDP-ASSOCIATE 路径），每查询开一个 hev 任务：连上游 SOCKS5 → TCP CONNECT 到同一解析器 IP:53 → 按 RFC 7766 两字节长度帧收发 DNS → 把应答拼成 IPv4+UDP 包直接写回 tun fd（`hev_socks5_tunnel_write_packet`，与 netif 输出同锁）。上限：DNS 查询 ≤1400 B、应答 ≤1472 B、并发 8。该模式仅解决 DNS；QUIC 等其它 UDP 仍受上游无 UDP 中继限制。
+
 ### 3.4 DNS
 
 国内 DNS 不可用作 VPN DNS：电视 Wi-Fi 下发的运营商/路由器 DNS 会把国外域名解析成被污染的假 IP（实测 `www.google.com → 104.244.42.197 / 2001::1`），浏览器连错服务器导致「网页打开失败」。
@@ -115,6 +117,12 @@ SOCKS5 CONNECT / UDP ASSOCIATE（无 HTTP CONNECT）
 
 > 备选：Clash 的 fake-ip DNS（`198.18.x`，按域名分流更优）需要它监听 53 端口，而 Android 只能查 53；可用 PC 端 53→7874 中继接入（该方案的取舍记录在 `docs/plan.md`）。当前方案为公共 DNS 走代理出口，**无需任何本地中继**。
 
+**UDP 中继不可用时的替代（DNS-over-TCP 模式，见 3.3）：** 该模式 VPN DNS 列表改为
+`[223.5.5.5(AliDNS), 119.29.29.29(DNSPod), 8.8.8.8, 1.1.1.1]`，**不再带 DHCP 路由器 DNS 兜底**。
+国内干净公共解析器对国外域名返回真实（未污染）IP，且本身是国内 IP——代理端规则无论 DIRECT 还是把公共
+DNS 放行进代理都由出口解析，两条路都不受污染。UDP 可用的上游（Clash/mihomo）仍用
+`8.8.8.8/1.1.1.1 + DHCP 兜底` 的原列表（0.1.18 前行为不变）。
+
 ---
 
 ## 四、华为老款 V 系列（鸿蒙 2.0）适配分析
@@ -124,9 +132,9 @@ SOCKS5 CONNECT / UDP ASSOCIATE（无 HTTP CONNECT）
 | Android 兼容 | ✅ 可用 | 鸿蒙 2.0 官方兼容 Android 软件，对应 API 29，`VpnService` / `ForegroundService` 可用 |
 | APK 安装 | ✅ 可侧载 | 老款 V 系列可通过 U 盘安装 APK（用户已确认） |
 | 后台保活 | ✅ 利好 | 鸿蒙 2.0 后台保活优于原生 Android，利于常驻，但仍需前台服务兜底 |
-| 遥控器交互 | ✅ 支持 | Leanback UI + DPAD 焦点导航 |
+| 遥控器交互 | ✅ 支持 | 纯 Activity + 自绘焦点控件（非 Leanback 组件库），DPAD 焦点导航 |
 | 分辨率适配 | ✅ 支持 | Leanback 布局自适应 720p / 1080p / 4K |
-| VPN 授权弹窗 | ⚠️ 需真机验证 | 首次启动需系统弹窗授权，鸿蒙下弹窗样式/文案需实测 |
+| VPN 授权入口 | ⚠️ 缺失，需兜底 | 老款鸿蒙 2.0 无 `com.android.vpndialogs` 系统授权弹窗；先尝试 `com.huawei.vpndialogs` / `com.huawei.android.vpndialogs` 组件，仍无则 `VpnGrant.tryActivate()`（hidden `prepareVpn` + AppOps）兜底；都失败时 `establish()` 报错并提示用 ADB/HDC 执行 `tool\grant-vpn.bat` |
 | 后台限制 | ⚠️ 需引导 | 建议引导用户在「应用启动管理」中允许本应用后台运行 |
 
 ---
@@ -190,12 +198,18 @@ class TvProxyVpnService : VpnService() {
 - 用 `SharedPreferences` 保存 `{ 协议, 地址, 端口 }`；
 - App 启动时读取并回填 UI；「保存」时写入配置并（重新）启动 VpnService。
 
-### 5.5 UI 交互（Leanback）
+### 5.5 UI 交互（DPAD 焦点）
 
 - 局域网 IP 用 `NetworkInterface` 枚举 WiFi 接口获取，展示为只读文本；
-- 代理类型用 `Spinner`（HTTP / SOCKS5）；
+- 代理类型是步进控件（`‹ SOCKS5 ›`）：类型行获焦后遥控器**左右键**循环切换 SOCKS5 / HTTP（环绕），上下键按 类型 → 地址 → 端口 → 保存 → 停止 移动焦点；左右箭头视觉随行聚焦态通过 `duplicateParentState` 联动；
 - 地址、端口用 `EditText`，获焦后系统自动弹出 TV 键盘；
 - 所有控件支持遥控器 DPAD 焦点导航。
+
+### 5.6 弹窗与鸿蒙默认窗框
+
+- 自绘弹窗（首次授权说明、保活提示）用 `Dialog` + `card_tv` 深色圆角卡片。
+- 踩坑：鸿蒙 2.0 TV 上 `Dialog` 的默认窗口背景会在自定义卡片**外侧**再画一圈浅灰辉光/描边（真机 4K 逐像素实测：四边约数 px 外出现峰值 ~#505050 的光带，卡边与光带间还有一圈更暗的缝）；Google ATV 模拟器无此现象，属系统默认 Dialog 外观而非卡片自身描边。
+- 处理：弹窗改用 `Theme.TVProxy.Dialog`（`windowBackground=transparent`、`windowFrame=@null`、`windowContentOverlay=@null`），并显式 `window?.setBackgroundDrawable(透明)`。去掉系统窗框后，卡片外直接是遮罩，仅剩卡片自身 1dp 细描边。
 
 ---
 

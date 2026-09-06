@@ -16,6 +16,8 @@ void hev_socks5_tunnel_fini (void);
 int hev_socks5_tunnel_run (void);
 void hev_socks5_tunnel_stop (void);
 
+int hev_socks5_tunnel_write_packet (const void *buf, size_t len);
+
 void hev_socks5_tunnel_stats (size_t *tx_packets, size_t *tx_bytes,
                               size_t *rx_packets, size_t *rx_bytes);
 

@@ -35,6 +35,7 @@
 #include "hev-tunnel.h"
 #include "hev-socks5-session-tcp.h"
 #include "hev-socks5-session-udp.h"
+#include "hev-dns-tcp.h"
 
 #include "hev-socks5-tunnel.h"
 
@@ -97,6 +98,22 @@ netif_output_handler (struct netif *netif, struct pbuf *p)
     stat_rx_bytes += s;
 
     return ERR_OK;
+}
+
+int
+hev_socks5_tunnel_write_packet (const void *buf, size_t len)
+{
+    ssize_t s;
+
+    hev_task_mutex_lock (&mutex);
+    if (!run) {
+        hev_task_mutex_unlock (&mutex);
+        return -1;
+    }
+    s = hev_tunnel_write (tun_fd, (void *)buf, len);
+    hev_task_mutex_unlock (&mutex);
+
+    return (int)s;
 }
 
 static err_t
@@ -214,6 +231,7 @@ event_task_entry (void *data)
     hev_task_io_read (event_fds[0], &val, sizeof (val), NULL, NULL);
 
     run = 0;
+    hev_dns_tcp_stop ();
     node = hev_list_first (&session_set);
     for (; node; node = hev_list_node_next (node)) {
         HevSocks5SessionData *sd;
@@ -261,6 +279,12 @@ lwip_io_task_entry (void *data)
 
         stat_tx_packets++;
         stat_tx_bytes += s;
+
+        if (hev_config_get_misc_dns_over_tcp () &&
+            hev_dns_tcp_handle_packet (buf->payload, (unsigned int)s)) {
+            pbuf_free (buf);
+            continue;
+        }
 
         hev_task_mutex_lock (&mutex);
         if (netif.input (buf, &netif) != ERR_OK)
@@ -524,6 +548,8 @@ hev_socks5_tunnel_init (int tun_fd)
     int res;
 
     LOG_D ("socks5 tunnel init");
+
+    hev_dns_tcp_init ();
 
     res = tunnel_init (tun_fd);
     if (res < 0)

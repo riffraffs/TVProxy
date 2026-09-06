@@ -77,7 +77,9 @@ class TvProxyVpnService : VpnService() {
         synchronized(runningLock) {
             teardownLocked()
             val config = ProxyPrefs.load(this)
-            val dns = dnsServers()
+            val dnsOverTcp = !probeUdpRelay(config.host, config.port)
+            Log.i(TAG, "upstream udp relay supported=${!dnsOverTcp} dns-over-tcp=$dnsOverTcp")
+            val dns = dnsServers(dnsOverTcp)
             Log.i(TAG, "establishing tun for ${config.protocol} ${config.host}:${config.port} dns=$dns")
             val builder = Builder()
                 .setSession(SESSION)
@@ -123,7 +125,7 @@ class TvProxyVpnService : VpnService() {
                     "HTTP CONNECT not implemented; using SOCKS5 to ${config.host}:${config.port}",
                 )
             }
-            val conf = writeNativeConfig(config)
+            val conf = writeNativeConfig(config, dnsOverTcp)
             val fd = pfd.detachFd()
             try {
                 if (!nativeLoaded) {
@@ -155,15 +157,28 @@ class TvProxyVpnService : VpnService() {
     /**
      * DNS servers for the VPN network, in query order.
      *
-     * The first entry normally wins, so the tunnel's own DNS traffic goes to
-     * clean public resolvers (8.8.8.8 / 1.1.1.1). Queries to those reach the
-     * upstream proxy, which answers from its exit node, so foreign domains get
-     * real (unpoisoned) addresses and Clash can route them. The local ISP/DHCP
-     * DNS often returns poisoned answers for foreign domains and is kept only
-     * as a last fallback. No local DNS relay on the proxy host is required.
+     * UDP mode (default; the upstream relays UDP, e.g. Clash/mihomo):
+     * queries to 8.8.8.8/1.1.1.1 reach the upstream, which answers from its
+     * exit node, so foreign domains get real (unpoisoned) addresses; the
+     * local ISP/DHCP DNS is kept only as a last fallback.
+     *
+     * DNS-over-TCP mode (upstream is TCP-only, e.g. iOS Loon LAN sharing):
+     * native hev intercepts these UDP port-53 queries and forwards them as
+     * DNS-over-TCP over a SOCKS5 CONNECT to the same resolver. Domestic clean
+     * resolvers (AliDNS/DNSPod) come first: they answer foreign domains with
+     * real addresses and are usually reachable DIRECT by the proxy host;
+     * 8.8.8.8/1.1.1.1 follow in case the proxy's rules forward public DNS via
+     * its exit node. The local DHCP DNS is omitted to avoid poisoned answers.
      */
-    private fun dnsServers(): List<String> {
+    private fun dnsServers(dnsOverTcp: Boolean): List<String> {
         val found = linkedSetOf<String>()
+        if (dnsOverTcp) {
+            found.add(DNS_TCP_1)
+            found.add(DNS_TCP_2)
+            found.add(DNS_REMOTE_1)
+            found.add(DNS_REMOTE_2)
+            return found.toList()
+        }
         found.add(DNS_REMOTE_1)
         found.add(DNS_REMOTE_2)
         found.addAll(systemDnsServers())
@@ -202,8 +217,27 @@ class TvProxyVpnService : VpnService() {
         return found.toList()
     }
 
-    private fun writeNativeConfig(config: ProxyConfig): File {
-        val file = File(cacheDir, "tproxy.yml")
+    /**
+     * Run the UDP-relay probe off the main thread (network is banned on the
+     * main thread) and wait up to 4s for its result. On timeout assume the
+     * upstream supports UDP, keeping the historic default.
+     */
+    private fun probeUdpRelay(host: String, port: Int): Boolean {
+        var result = true
+        val thread = Thread {
+            result = UpstreamProbe.supportsUdpRelay(host, port)
+        }
+        thread.start()
+        return try {
+            thread.join(4000)
+            result
+        } catch (e: Throwable) {
+            Log.w(TAG, "udp probe interrupted", e)
+            true
+        }
+    }
+
+    private fun writeNativeConfig(config: ProxyConfig, dnsOverTcp: Boolean): File {        val file = File(cacheDir, "tproxy.yml")
         val yaml = """
             |tunnel:
             |  mtu: $TUN_MTU
@@ -215,6 +249,7 @@ class TvProxyVpnService : VpnService() {
             |misc:
             |  log-file: '${File(cacheDir, "hev.log").absolutePath.replace("\\", "/")}'
             |  log-level: info
+            |  dns-over-tcp: $dnsOverTcp
             |  task-stack-size: 1048576
             |
         """.trimMargin()
@@ -329,6 +364,8 @@ class TvProxyVpnService : VpnService() {
         private const val TUN_MTU = 1500
         private const val DNS_REMOTE_1 = "8.8.8.8"
         private const val DNS_REMOTE_2 = "1.1.1.1"
+        private const val DNS_TCP_1 = "223.5.5.5"
+        private const val DNS_TCP_2 = "119.29.29.29"
         private const val NOTIF_ID = 1
         private const val CHANNEL_ID = "tvproxy.vpn"
     }
