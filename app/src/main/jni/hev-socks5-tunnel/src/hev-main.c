@@ -16,7 +16,6 @@
 #include <hev-task.h>
 #include <hev-task-system.h>
 
-#include "hev-utils.h"
 #include "hev-config.h"
 #include "hev-config-const.h"
 #include "hev-logger.h"
@@ -44,10 +43,8 @@ sigint_handler (int signum)
 static int
 hev_socks5_tunnel_main_inner (int tun_fd)
 {
-    const char *pid_file;
     const char *log_file;
     int log_level;
-    int nofile;
     int res;
 
     log_file = hev_config_get_misc_log_file ();
@@ -60,15 +57,6 @@ hev_socks5_tunnel_main_inner (int tun_fd)
     res = hev_socks5_logger_init (log_level, log_file);
     if (res < 0)
         return -3;
-
-    nofile = hev_config_get_misc_limit_nofile ();
-    res = set_limit_nofile (nofile);
-    if (res < 0)
-        LOG_W ("set limit nofile");
-
-    pid_file = hev_config_get_misc_pid_file ();
-    if (pid_file)
-        run_as_daemon (pid_file);
 
     res = hev_task_system_init ();
     if (res < 0)
@@ -95,17 +83,6 @@ int
 hev_socks5_tunnel_main_from_file (const char *config_path, int tun_fd)
 {
     int res = hev_config_init_from_file (config_path);
-    if (res < 0)
-        return -1;
-
-    return hev_socks5_tunnel_main_inner (tun_fd);
-}
-
-int
-hev_socks5_tunnel_main_from_str (const unsigned char *config_str,
-                                 unsigned int config_len, int tun_fd)
-{
-    int res = hev_config_init_from_str (config_str, config_len);
     if (res < 0)
         return -1;
 

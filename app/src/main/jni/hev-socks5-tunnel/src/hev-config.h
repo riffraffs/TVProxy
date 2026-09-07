@@ -24,19 +24,9 @@ struct _HevConfigServer
 };
 
 int hev_config_init_from_file (const char *config_path);
-int hev_config_init_from_str (const unsigned char *config_str,
-                              unsigned int config_len);
 void hev_config_fini (void);
 
-const char *hev_config_get_tunnel_name (void);
 unsigned int hev_config_get_tunnel_mtu (void);
-int hev_config_get_tunnel_multi_queue (void);
-
-const char *hev_config_get_tunnel_ipv4_address (void);
-const char *hev_config_get_tunnel_ipv6_address (void);
-
-const char *hev_config_get_tunnel_post_up_script (void);
-const char *hev_config_get_tunnel_pre_down_script (void);
 
 HevConfigServer *hev_config_get_socks5_server (void);
 
@@ -44,11 +34,8 @@ int hev_config_get_misc_task_stack_size (void);
 int hev_config_get_misc_tcp_buffer_size (void);
 int hev_config_get_misc_connect_timeout (void);
 int hev_config_get_misc_read_write_timeout (void);
-int hev_config_get_misc_limit_nofile (void);
-const char *hev_config_get_misc_pid_file (void);
 const char *hev_config_get_misc_log_file (void);
 int hev_config_get_misc_log_level (void);
 int hev_config_get_misc_dns_over_tcp (void);
-int hev_config_get_misc_drop_quic (void);
 
 #endif /* __HEV_CONFIG_H__ */

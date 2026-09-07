@@ -24,15 +24,18 @@ hev-rbtree-test.o
 proto_check.js
 tvproxy_ui.png
 real_tvproxy_ui.png
+icon.png
 
 # --- Packaged APKs (rebuildable from source) ---
 dist/
 
 # --- Debug scripts & local tooling (machine-specific, not project source) ---
-/gradlew
-/gradlew.bat
 /run_build.bat
 /run_emu.bat
 /ui_build.init.gradle
 /adb/
 /tool/
+
+# --- Private docs & conventions (kept only on the dev machine) ---
+/docs/
+/AGENTS.md

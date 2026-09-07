@@ -151,9 +151,9 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQ_PREPARE) return
-        Log.i(TAG, "VPN prepare result=$resultCode prepared=${isVpnPrepared()}")
+        Log.i(TAG, "VPN prepare result=$resultCode prepared=${VpnGrant.isPrepared(this)}")
         consentReturned = true
-        if (resultCode == RESULT_OK || isVpnPrepared()) {
+        if (resultCode == RESULT_OK || VpnGrant.isPrepared(this)) {
             awaitingVpnConsent = false
             startVpn()
             return
@@ -215,7 +215,7 @@ class MainActivity : Activity() {
 
     private fun requestVpn() {
         try {
-            if (isVpnPrepared()) {
+            if (VpnGrant.isPrepared(this)) {
                 startVpn()
                 return
             }
@@ -296,7 +296,7 @@ class MainActivity : Activity() {
 
     private fun completeVpnConsentIfReady() {
         if (!awaitingVpnConsent) return
-        if (isVpnPrepared()) {
+        if (VpnGrant.isPrepared(this)) {
             awaitingVpnConsent = false
             consentReturned = false
             startVpn()
@@ -313,8 +313,6 @@ class MainActivity : Activity() {
             )
         }
     }
-
-    private fun isVpnPrepared(): Boolean = VpnService.prepare(this) == null
 
     private fun vpnConfigRestricted(): Boolean {
         return try {

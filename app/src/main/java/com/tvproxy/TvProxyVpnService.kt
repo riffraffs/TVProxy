@@ -126,7 +126,7 @@ class TvProxyVpnService : VpnService() {
                     "HTTP CONNECT not implemented; using SOCKS5 to ${config.host}:${config.port}",
                 )
             }
-            val conf = writeNativeConfig(config, dnsOverTcp, ProxyPrefs.dropQuic(this))
+            val conf = writeNativeConfig(config, dnsOverTcp)
             val fd = pfd.detachFd()
             try {
                 if (!nativeLoaded) {
@@ -238,24 +238,20 @@ class TvProxyVpnService : VpnService() {
         }
     }
 
-    private fun writeNativeConfig(config: ProxyConfig, dnsOverTcp: Boolean, dropQuic: Boolean): File {        val file = File(cacheDir, "tproxy.yml")
-        val yaml = """
-            |tunnel:
-            |  mtu: $TUN_MTU
-            |  ipv4: $TUN_ADDR
-            |socks5:
-            |  port: ${config.port}
-            |  address: '${config.host}'
-            |  udp: 'udp'
-            |misc:
-            |  log-file: '${File(cacheDir, "hev.log").absolutePath.replace("\\", "/")}'
-            |  log-level: info
-            |  dns-over-tcp: $dnsOverTcp
-            |  drop-quic: $dropQuic
-            |  task-stack-size: 1048576
-            |
-        """.trimMargin()
-        file.writeText(yaml)
+    private fun writeNativeConfig(config: ProxyConfig, dnsOverTcp: Boolean): File {
+        val file = File(cacheDir, "tproxy.conf")
+        val logPath = File(cacheDir, "hev.log").absolutePath.replace("\\", "/")
+        val conf = buildString {
+            appendLine("mtu=$TUN_MTU")
+            appendLine("socks5-address=${config.host}")
+            appendLine("socks5-port=${config.port}")
+            appendLine("socks5-udp=udp")
+            appendLine("log-file=$logPath")
+            appendLine("log-level=info")
+            appendLine("dns-over-tcp=$dnsOverTcp")
+            appendLine("task-stack-size=262144")
+        }
+        file.writeText(conf)
         return file
     }
 
@@ -347,9 +343,6 @@ class TvProxyVpnService : VpnService() {
 
     @Suppress("FunctionName")
     private external fun TProxyStopService()
-
-    @Suppress("FunctionName")
-    private external fun TProxyGetStats(): LongArray
 
     companion object {
         const val ACTION_START = "com.tvproxy.action.START"

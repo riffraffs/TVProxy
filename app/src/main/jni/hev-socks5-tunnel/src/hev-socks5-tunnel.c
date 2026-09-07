@@ -28,7 +28,6 @@
 #include <hev-task-system.h>
 #include <hev-memory-allocator.h>
 
-#include "hev-exec.h"
 #include "hev-list.h"
 #include "hev-compiler.h"
 #include "hev-config.h"
@@ -42,13 +41,7 @@
 
 static int run;
 static int tun_fd = -1;
-static int tun_fd_local;
 static int event_fds[2] = { -1, -1 };
-
-static size_t stat_tx_packets;
-static size_t stat_rx_packets;
-static size_t stat_tx_bytes;
-static size_t stat_rx_bytes;
 
 /* per-protocol throughput, for the periodic [stats] log */
 static unsigned long long stat_last_ms;
@@ -61,16 +54,6 @@ static size_t st_dn_udp_bytes;
 static size_t st_dn_tcp_pkts;
 static size_t st_dn_udp_pkts;
 
-/* drop-quic mode: UDP/443 (QUIC) is dropped and answered with ICMP port
-   unreachable so clients fall back to TCP promptly */
-static unsigned int stat_quic_dropped;
-static unsigned int stat_quic_icmp;
-static unsigned long long quic_icmp_win_ms;
-static unsigned int quic_icmp_win_n;
-static unsigned short quic_ip_id;
-
-#define QUIC_ICMP_MAX_PER_SEC 8
-
 static unsigned long long
 now_ms (void)
 {
@@ -79,73 +62,6 @@ now_ms (void)
     clock_gettime (CLOCK_MONOTONIC, &ts);
 
     return (unsigned long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-}
-
-static unsigned short
-ip_checksum (const void *buf, unsigned int len)
-{
-    const unsigned char *p = buf;
-    unsigned long sum = 0;
-
-    while (len > 1) {
-        sum += ((unsigned int)p[0] << 8) | p[1];
-        p += 2;
-        len -= 2;
-    }
-    if (len)
-        sum += (unsigned int)p[0] << 8;
-    while (sum >> 16)
-        sum = (sum & 0xffff) + (sum >> 16);
-
-    return (unsigned short)~sum;
-}
-
-/* Build an ICMP destination-unreachable (port unreachable) reply for a
-   dropped QUIC (UDP/443) datagram, quoting the original IP header plus 8
-   bytes of its payload, per RFC 792. Returns the reply length or -1. */
-static int
-icmp_port_unreachable (const unsigned char *ip, unsigned int len,
-                       unsigned char *out, unsigned short *ip_id)
-{
-    unsigned int quote;
-    unsigned int icmp_len;
-    unsigned int total;
-    unsigned short sum;
-
-    if (len < 28)
-        return -1;
-    if (((ip[0] & 0x0f) * 4) != 20) /* no IP options: quoting gets complex */
-        return -1;
-
-    quote = len - 20 > 8 ? 8 : len - 20;
-    icmp_len = 8 + 20 + quote;
-    total = 20 + icmp_len;
-
-    memset (out, 0, total);
-    out[0] = 0x45;
-    out[2] = (unsigned char)(total >> 8);
-    out[3] = (unsigned char)(total & 0xff);
-    out[4] = (unsigned char)(*ip_id >> 8);
-    out[5] = (unsigned char)(*ip_id & 0xff);
-    (*ip_id)++;
-    out[8] = 64;
-    out[9] = 1; /* ICMP */
-    memcpy (out + 12, ip + 16, 4); /* src = original dst */
-    memcpy (out + 16, ip + 12, 4); /* dst = original src */
-    sum = ip_checksum (out, 20);
-    out[10] = (unsigned char)(sum >> 8);
-    out[11] = (unsigned char)(sum & 0xff);
-
-    out[20] = 3;      /* dest unreachable */
-    out[21] = 3;      /* port unreachable */
-    memcpy (out + 28, ip, 20);          /* quoted original IP header */
-    memcpy (out + 48, ip + 20, quote);  /* quoted payload start */
-
-    sum = ip_checksum (out + 20, icmp_len);
-    out[22] = (unsigned char)(sum >> 8);
-    out[23] = (unsigned char)(sum & 0xff);
-
-    return (int)total;
 }
 
 static void
@@ -176,12 +92,11 @@ stats_flush (void)
     stat_last_ms = now;
 
     if (!st_up_tcp_bytes && !st_up_udp_bytes && !st_dn_tcp_bytes &&
-        !st_dn_udp_bytes && !stat_quic_dropped)
+        !st_dn_udp_bytes)
         return;
 
     LOG_I ("[stats] up tcp=%lluKB/s(%llup) udp=%lluKB/s(%llup) "
-           "down tcp=%lluKB/s(%llup) udp=%lluKB/s(%llup) quic_drop=%u "
-           "icmp=%u",
+           "down tcp=%lluKB/s(%llup) udp=%lluKB/s(%llup)",
            (unsigned long long)st_up_tcp_bytes * 1000 / 1024 / span,
            (unsigned long long)st_up_tcp_pkts,
            (unsigned long long)st_up_udp_bytes * 1000 / 1024 / span,
@@ -189,11 +104,7 @@ stats_flush (void)
            (unsigned long long)st_dn_tcp_bytes * 1000 / 1024 / span,
            (unsigned long long)st_dn_tcp_pkts,
            (unsigned long long)st_dn_udp_bytes * 1000 / 1024 / span,
-           (unsigned long long)st_dn_udp_pkts, stat_quic_dropped,
-           stat_quic_icmp);
-
-    stat_quic_dropped = 0;
-    stat_quic_icmp = 0;
+           (unsigned long long)st_dn_udp_pkts);
 
     st_up_tcp_bytes = 0;
     st_up_udp_bytes = 0;
@@ -254,9 +165,6 @@ netif_output_handler (struct netif *netif, struct pbuf *p)
         LOG_W ("socks5 tunnel write");
         return ERR_IF;
     }
-
-    stat_rx_packets++;
-    stat_rx_bytes += s;
 
     if (s > 0 && ip0) {
         if (ip0[9] == 6) {
@@ -448,36 +356,7 @@ lwip_io_task_entry (void *data)
             continue;
         }
 
-        stat_tx_packets++;
-        stat_tx_bytes += s;
-
         count_up_packet (buf->payload, (unsigned int)s);
-
-        if (!hev_config_get_misc_dns_over_tcp () &&
-            hev_config_get_misc_drop_quic () &&
-            hev_dns_tcp_udp_dst_port (buf->payload, (unsigned int)s) == 443) {
-            /* QUIC probe/flow: the upstream's UDP path is unreliable for the
-               exit in use; drop the datagram and answer ICMP port unreachable
-               so the app falls back to TCP promptly. */
-            unsigned char icmp[128];
-            int ilen;
-
-            stat_quic_dropped++;
-            ilen = icmp_port_unreachable (buf->payload, (unsigned int)s,
-                                          icmp, &quic_ip_id);
-            if (ilen > 0 && now_ms () - quic_icmp_win_ms >= 1000) {
-                quic_icmp_win_ms = now_ms ();
-                quic_icmp_win_n = 0;
-            }
-            if (ilen > 0 && quic_icmp_win_n < QUIC_ICMP_MAX_PER_SEC) {
-                quic_icmp_win_n++;
-                if (hev_socks5_tunnel_write_packet (icmp, (unsigned int)ilen)
-                    == ilen)
-                    stat_quic_icmp++;
-            }
-            pbuf_free (buf);
-            continue;
-        }
 
         if (hev_config_get_misc_dns_over_tcp ()) {
             int udp_port;
@@ -545,85 +424,26 @@ lwip_timer_task_entry (void *data)
 static int
 tunnel_init (int extern_tun_fd)
 {
-    const char *script_path, *name, *ipv4, *ipv6;
-    int multi_queue, res;
-    unsigned int mtu;
+    int nonblock = 1;
+    int res;
 
-    if (extern_tun_fd >= 0) {
-        int nonblock = 1;
-
-        res = ioctl (extern_tun_fd, FIONBIO, (char *)&nonblock);
-        if (res < 0) {
-            LOG_E ("socks5 tunnel non-blocking");
-            return -1;
-        }
-
-        tun_fd = extern_tun_fd;
-        return 0;
-    }
-
-    name = hev_config_get_tunnel_name ();
-    multi_queue = hev_config_get_tunnel_multi_queue ();
-    tun_fd = hev_tunnel_open (name, multi_queue);
-    if (tun_fd < 0) {
-        LOG_E ("socks5 tunnel open (%s)", strerror (errno));
-        return -1;
-    }
-
-    mtu = hev_config_get_tunnel_mtu ();
-    res = hev_tunnel_set_mtu (mtu);
+    res = ioctl (extern_tun_fd, FIONBIO, (char *)&nonblock);
     if (res < 0) {
-        LOG_E ("socks5 tunnel mtu");
+        LOG_E ("socks5 tunnel non-blocking");
         return -1;
     }
 
-    ipv4 = hev_config_get_tunnel_ipv4_address ();
-    if (ipv4) {
-        res = hev_tunnel_set_ipv4 (ipv4, 32);
-        if (res < 0) {
-            LOG_E ("socks5 tunnel ipv4");
-            return -1;
-        }
-    }
-
-    ipv6 = hev_config_get_tunnel_ipv6_address ();
-    if (ipv6) {
-        res = hev_tunnel_set_ipv6 (ipv6, 128);
-        if (res < 0) {
-            LOG_E ("socks5 tunnel ipv6");
-            return -1;
-        }
-    }
-
-    res = hev_tunnel_set_state (1);
-    if (res < 0) {
-        LOG_E ("socks5 tunnel state");
-        return -1;
-    }
-
-    script_path = hev_config_get_tunnel_post_up_script ();
-    if (script_path)
-        hev_exec_run (script_path, hev_tunnel_get_name (), 0);
-
-    tun_fd_local = 1;
+    tun_fd = extern_tun_fd;
     return 0;
 }
 
 static void
 tunnel_fini (void)
 {
-    const char *script_path;
-
-    if (!tun_fd_local)
-        return;
-
-    script_path = hev_config_get_tunnel_pre_down_script ();
-    if (script_path)
-        hev_exec_run (script_path, hev_tunnel_get_name (), 1);
-
-    hev_tunnel_close (tun_fd);
-    tun_fd_local = 0;
-    tun_fd = -1;
+    if (tun_fd >= 0) {
+        close (tun_fd);
+        tun_fd = -1;
+    }
 }
 
 static int
@@ -810,10 +630,6 @@ hev_socks5_tunnel_fini (void)
     gateway_fini ();
     tunnel_fini ();
 
-    stat_tx_packets = 0;
-    stat_rx_packets = 0;
-    stat_tx_bytes = 0;
-    stat_rx_bytes = 0;
     stat_last_ms = now_ms ();
     st_up_tcp_bytes = 0;
     st_up_udp_bytes = 0;
@@ -823,11 +639,6 @@ hev_socks5_tunnel_fini (void)
     st_dn_udp_bytes = 0;
     st_dn_tcp_pkts = 0;
     st_dn_udp_pkts = 0;
-    stat_quic_dropped = 0;
-    stat_quic_icmp = 0;
-    quic_icmp_win_ms = now_ms ();
-    quic_icmp_win_n = 0;
-    quic_ip_id = 0;
 }
 
 int
@@ -868,23 +679,4 @@ hev_socks5_tunnel_stop (void)
 
     res = write (fd, &res, 1);
     assert (res > 0 && "socks5 tunnel write event");
-}
-
-void
-hev_socks5_tunnel_stats (size_t *tx_packets, size_t *tx_bytes,
-                         size_t *rx_packets, size_t *rx_bytes)
-{
-    LOG_D ("socks5 tunnel stats");
-
-    if (tx_packets)
-        *tx_packets = stat_tx_packets;
-
-    if (tx_bytes)
-        *tx_bytes = stat_tx_bytes;
-
-    if (rx_packets)
-        *rx_packets = stat_rx_packets;
-
-    if (rx_bytes)
-        *rx_bytes = stat_rx_bytes;
 }

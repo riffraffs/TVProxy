@@ -10,7 +10,6 @@ object ProxyPrefs {
     private const val KEY_VPN_EXPLAINED = "vpn_explained"
     private const val KEY_KEEPALIVE_HINT = "keepalive_hint_shown"
     private const val KEY_START_ATTEMPT = "start_attempt"
-    private const val KEY_DROP_QUIC = "drop_quic"
 
     fun load(context: Context): ProxyConfig {
         val p = prefs(context)
@@ -54,15 +53,6 @@ object ProxyPrefs {
 
     fun hadUnfinishedStart(context: Context): Boolean =
         prefs(context).getBoolean(KEY_START_ATTEMPT, false)
-
-    /**
-     * Drop QUIC (UDP/443) in the tunnel and answer ICMP port unreachable, so
-     * apps fall back to TCP. On for upstream exits whose UDP relay is
-     * unreliable (TCP is fast but QUIC crawls); persisted so a UI toggle can
-     * be added later.
-     */
-    fun dropQuic(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_DROP_QUIC, true)
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
