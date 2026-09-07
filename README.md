@@ -10,26 +10,27 @@
 
 - **目标平台**：华为智慧屏 V 系列（鸿蒙 2.0，AOSP 兼容层，约 API 29）；同类 Android TV 亦可。遥控器操作，适配 720p / 1080p / 4K。
 - **解决的问题**：电视「Wi-Fi 没有配置高级代理」入口；不想在电视上安装、维护 Clash；手边已有电脑 **Clash Verge（mihomo）** 或 iPhone **Loon** 局域网共享代理。
-- **原理**：`VpnService` 建 tun（`10.0.0.2/24`，路由 `0.0.0.0/0`，仅 IPv4，MTU 1500）→ `hev-socks5-tunnel`（内置 lwIP 协议栈）→ 上游 SOCKS5。
+- **原理**：`VpnService` 建 tun（`10.0.0.2/24`，路由 `0.0.0.0/0`，仅 IPv4，MTU 1500）→ fake-ip 把 DNS 还原成域名 → `hev-socks5-tunnel`（lwIP）→ 上游 SOCKS5 带域名。
 
 **兼容性与边界**
 
 | 项目 | 说明 |
 |------|------|
 | 上游协议 | **仅 SOCKS5**。界面上的“HTTP”暂未实现 |
-| 已测试上游 | **Clash Verge（mihomo）局域网共享、iOS Loon 局域网共享**，两类均完成真机联调 |
-| Loon 限制 | Loon 共享 SOCKS5 **没有 UDP 中继**（UDP ASSOCIATE 返回空地址）。TVProxy 自动回落为「DNS 走 TCP」以保证网页/普通应用可用； |
-| DNS | 上游支持 UDP：`8.8.8.8`/`1.1.1.1` 查询经隧道由代理出口解析（防污染）；无 UDP 中继：自动切 DNS-over-TCP（`223.5.5.5`/`119.29.29.29`/`8.8.8.8`/`1.1.1.1`），无需任何配置 |
+| 已测试上游 | **Clash Verge（mihomo）局域网共享、iOS Loon 局域网共享** |
+| DNS | 仅 fake-ip：拦截 tun 上 UDP:53，本地答 `198.18.x`，SOCKS5 把**域名**交给 Clash/Loon 解析 |
+| Loon 限制 | 共享 SOCKS5 **没有 UDP 中继**。QUIC 等 UDP 不可用，仅 TCP；看视频请用 Clash |
 
 **工作原理（简）**
 
 ```
-电视 App 流量 ──► VpnService 虚拟网卡（tun，全局 IPv4 路由）
-                ──► hev-socks5-tunnel（内置 lwIP 协议栈）
-                ──► 上游 SOCKS5（Clash Verge 混合端口 / Loon 共享端口）
+电视 App ──► tun（全局 IPv4）
+          ├─ UDP:53 ──► fake-ip（198.18.x ↔ 域名）
+          └─ TCP/UDP ──► hev-socks5-tunnel
+                          SOCKS5 ATYP=域名 ──► Clash / Loon
 ```
 
-- 每次「保存并启动」会**自动探测上游是否支持 UDP 中继**并选择对应的 DNS 通道，Clash ↔ Loon 之间切换只需改地址/端口再保存一次。
+- 每次「保存并启动」会探测上游是否支持 UDP 中继。无 UDP（如 Loon）时丢掉非 DNS UDP，并显示黄条。Clash ↔ Loon 切换只需改地址/端口再保存一次。
 ---
 
 ## 2. 授权工具使用方法
@@ -61,7 +62,7 @@
 1. **准备上游共享代理**
    - Clash Verge：开启「允许局域网连接」，记录电脑局域网 IP 与**混合端口**（如 `192.168.x.x:7897`）；
    - Loon：仪表页点右上角开启「网络共享」（● 变绿），使用其 **SOCKS5 端口**（如 `192.168.x.x:7221`），并保持 Loon 运行。
-2. **安装 APK**：U 盘侧载，或 `adb install`。
+2. **安装 APK**：仓库 `release/` 下 32/64 位 debug 包（`TVProxy-0.9.1-*-debug.apk`），U 盘侧载或 `adb install`。
 3. **（老款鸿蒙电视）先授予 VPN 权限**——见第 2 节；其它有系统授权弹窗的设备直接在弹窗里选「允许」。
 4. 打开 TVProxy，填上游 IP 与端口 →「保存并启动」。状态胶囊变为「运行中」即成功。
 
@@ -87,9 +88,10 @@
 TVProxy/
 ├─ app/                              # Android 应用（Kotlin + JNI/NDK）
 │  ├─ src/main/java/com/tvproxy/     # Kotlin 源码（UI / 配置 / VpnService / 上游探测 / VPN 授权）
-│  ├─ src/main/jni/hev-socks5-tunnel/ # native 引擎（lwIP + SOCKS5，含 DNS-over-TCP）
+│  ├─ src/main/jni/hev-socks5-tunnel/ # native 引擎（lwIP + SOCKS5 + fake-ip）
 │  ├─ src/main/res/                  # 布局 / 文案 / 颜色
 │  └─ build.gradle.kts
+├─ release/                          # 版本化 debug APK（armeabi-v7a / arm64-v8a）
 ├─ TVProxy-VPN授权工具/              # 电脑侧一键授权（grant_vpn.bat + 便携 adb）
 ├─ gradlew / gradle/                 # 标准 Gradle wrapper（仓库内可直接构建）
 ├─ build.gradle.kts                  # 根构建脚本
@@ -98,7 +100,7 @@ TVProxy/
 └─ README.md
 ```
 
-> 不纳入版本控制：`app/build/`（构建产物）、`dist/`（APK 分发）、`tool/`（本地 SDK/NDK/工具链）、`local.properties`。
+> 不纳入版本控制：`app/build/`（构建产物）、`dist/`（本地历史包）、`tool/`（本地 SDK/NDK/工具链）、`local.properties`。`release/*.apk` 随版本提交。
 
 ---
 

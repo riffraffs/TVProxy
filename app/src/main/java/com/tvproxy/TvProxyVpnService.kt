@@ -4,16 +4,12 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.io.File
-import java.net.Inet4Address
 import java.util.concurrent.atomic.AtomicBoolean
 
 class TvProxyVpnService : VpnService() {
@@ -80,7 +76,7 @@ class TvProxyVpnService : VpnService() {
             val dnsOverTcp = !probeUdpRelay(config.host, config.port)
             Log.i(TAG, "upstream udp relay supported=${!dnsOverTcp} dns-over-tcp=$dnsOverTcp")
             dnsOverTcpRunning.set(dnsOverTcp)
-            val dns = dnsServers(dnsOverTcp)
+            val dns = dnsServers()
             Log.i(TAG, "establishing tun for ${config.protocol} ${config.host}:${config.port} dns=$dns")
             val builder = Builder()
                 .setSession(SESSION)
@@ -156,66 +152,11 @@ class TvProxyVpnService : VpnService() {
     }
 
     /**
-     * DNS servers for the VPN network, in query order.
-     *
-     * UDP mode (default; the upstream relays UDP, e.g. Clash/mihomo):
-     * queries to 8.8.8.8/1.1.1.1 reach the upstream, which answers from its
-     * exit node, so foreign domains get real (unpoisoned) addresses; the
-     * local ISP/DHCP DNS is kept only as a last fallback.
-     *
-     * DNS-over-TCP mode (upstream is TCP-only, e.g. iOS Loon LAN sharing):
-     * native hev intercepts these UDP port-53 queries and forwards them as
-     * DNS-over-TCP over a SOCKS5 CONNECT to the same resolver. Domestic clean
-     * resolvers (AliDNS/DNSPod) come first: they answer foreign domains with
-     * real addresses and are usually reachable DIRECT by the proxy host;
-     * 8.8.8.8/1.1.1.1 follow in case the proxy's rules forward public DNS via
-     * its exit node. The local DHCP DNS is omitted to avoid poisoned answers.
+     * Bait address so Android netd sends UDP:53. tun fake-ip consumes those
+     * queries; 8.8.8.8 is never contacted.
      */
-    private fun dnsServers(dnsOverTcp: Boolean): List<String> {
-        val found = linkedSetOf<String>()
-        if (dnsOverTcp) {
-            found.add(DNS_TCP_1)
-            found.add(DNS_TCP_2)
-            found.add(DNS_REMOTE_1)
-            found.add(DNS_REMOTE_2)
-            return found.toList()
-        }
-        found.add(DNS_REMOTE_1)
-        found.add(DNS_REMOTE_2)
-        found.addAll(systemDnsServers())
-        return found.toList()
-    }
-
-    /**
-     * Same as phone Wi-Fi manual proxy: keep the network's DHCP DNS.
-     * Read before establish() so we see Wi-Fi, not this VPN.
-     */
-    private fun systemDnsServers(): List<String> {
-        val found = linkedSetOf<String>()
-        try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val networks = cm.allNetworks ?: emptyArray()
-            for (network in networks) {
-                val caps = cm.getNetworkCapabilities(network) ?: continue
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
-                val lp = cm.getLinkProperties(network) ?: continue
-                val ifname = lp.interfaceName.orEmpty()
-                if (ifname.startsWith("tun") || ifname.startsWith("ppp")) continue
-                for (addr in lp.dnsServers) {
-                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
-                        val ip = addr.hostAddress ?: continue
-                        if (ip != TUN_ADDR) found.add(ip)
-                    }
-                }
-            }
-        } catch (e: Throwable) {
-            Log.w(TAG, "read system DNS failed", e)
-        }
-        if (found.isEmpty()) {
-            Log.w(TAG, "no Wi-Fi DNS; fallback $DNS_REMOTE_1")
-            found.add(DNS_REMOTE_1)
-        }
-        return found.toList()
+    private fun dnsServers(): List<String> {
+        return listOf(DNS_BAIT)
     }
 
     /**
@@ -352,7 +293,7 @@ class TvProxyVpnService : VpnService() {
 
         val isRunning = AtomicBoolean(false)
 
-        /** True when the current run is in DNS-over-TCP mode (upstream relays no UDP). */
+        /** True when the current run's upstream relays no UDP (Loon etc.). */
         val dnsOverTcpRunning = AtomicBoolean(false)
 
         private const val TAG = "TvProxyVpn"
@@ -361,10 +302,7 @@ class TvProxyVpnService : VpnService() {
         private const val TUN_PREFIX = 24
         private const val TUN_ROUTE = "0.0.0.0"
         private const val TUN_MTU = 1500
-        private const val DNS_REMOTE_1 = "8.8.8.8"
-        private const val DNS_REMOTE_2 = "1.1.1.1"
-        private const val DNS_TCP_1 = "223.5.5.5"
-        private const val DNS_TCP_2 = "119.29.29.29"
+        private const val DNS_BAIT = "8.8.8.8"
         private const val NOTIF_ID = 1
         private const val CHANNEL_ID = "tvproxy.vpn"
     }

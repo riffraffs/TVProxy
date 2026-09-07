@@ -28,6 +28,9 @@ icon.png
 
 # --- Packaged APKs (rebuildable from source) ---
 dist/
+# Versioned debug APKs for GitHub (32/64-bit)
+!release/
+!release/*.apk
 
 # --- Debug scripts & local tooling (machine-specific, not project source) ---
 /run_build.bat

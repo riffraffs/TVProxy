@@ -25,6 +25,7 @@
 #include "hev-logger.h"
 #include "hev-compiler.h"
 #include "hev-config-const.h"
+#include "hev-fake-ip.h"
 
 #include "hev-socks5-session-udp.h"
 
@@ -190,7 +191,21 @@ udp_recv_handler (void *arg, struct udp_pcb *pcb, struct pbuf *p,
 
     frame->data = p;
     memset (&frame->node, 0, sizeof (frame->node));
-    hev_socks5_addr_from_lwip (&frame->addr, &pcb->local_ip, pcb->local_port);
+    {
+        char name[256];
+        int res;
+
+        res = hev_fake_ip_socks_addr (&frame->addr, &pcb->local_ip,
+                                      pcb->local_port, name, sizeof (name));
+        if (res < 0) {
+            LOG_W ("[socks] udp fake-ip miss");
+            hev_free (frame);
+            pbuf_free (p);
+            return;
+        }
+        if (res > 0 && !self->frames)
+            LOG_I ("[socks] udp %s:%u", name, (unsigned)pcb->local_port);
+    }
 
     self->frames++;
     hev_list_add_tail (&self->frame_list, &frame->node);

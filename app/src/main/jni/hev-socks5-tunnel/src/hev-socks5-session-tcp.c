@@ -23,6 +23,7 @@
 #include "hev-config.h"
 #include "hev-logger.h"
 #include "hev-config-const.h"
+#include "hev-fake-ip.h"
 
 #include "hev-socks5-session-tcp.h"
 
@@ -275,11 +276,17 @@ hev_socks5_session_tcp_construct (HevSocks5SessionTCP *self,
                                   struct tcp_pcb *pcb, HevTaskMutex *mutex)
 {
     HevSocks5Addr addr;
+    char name[256];
     int res;
 
-    res = hev_socks5_addr_from_lwip (&addr, &pcb->local_ip, pcb->local_port);
-    if (res < 0)
+    res = hev_fake_ip_socks_addr (&addr, &pcb->local_ip, pcb->local_port, name,
+                                  sizeof (name));
+    if (res < 0) {
+        LOG_W ("[socks] tcp fake-ip miss");
         return -1;
+    }
+    if (res > 0)
+        LOG_I ("[socks] tcp %s:%u", name, (unsigned)pcb->local_port);
 
     res = hev_socks5_client_tcp_construct (&self->base, &addr);
     if (res < 0)

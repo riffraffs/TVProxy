@@ -286,17 +286,43 @@ hev_socks5_client_read_response (HevSocks5Client *self)
     switch (res.addr.atype) {
     case HEV_SOCKS5_ADDR_TYPE_IPV4:
         addrlen = 6;
+        ret = hev_task_io_socket_recv (HEV_SOCKS5 (self)->fd, &res.addr.ipv4,
+                                       addrlen, MSG_WAITALL, task_io_yielder,
+                                       self);
         break;
     case HEV_SOCKS5_ADDR_TYPE_IPV6:
         addrlen = 18;
+        ret = hev_task_io_socket_recv (HEV_SOCKS5 (self)->fd, &res.addr.ipv6,
+                                       addrlen, MSG_WAITALL, task_io_yielder,
+                                       self);
         break;
+    case HEV_SOCKS5_ADDR_TYPE_NAME: {
+        unsigned char nlen;
+
+        /* RFC 1928: BND.ADDR may be a domain. Clash returns IPv4; Loon
+           replies ATYP=3. TCP CONNECT ignores BND; we only consume it. */
+        ret = hev_task_io_socket_recv (HEV_SOCKS5 (self)->fd, &nlen, 1,
+                                       MSG_WAITALL, task_io_yielder, self);
+        if (ret <= 0) {
+            LOG_E ("%p socks5 client read addr", self);
+            return -1;
+        }
+        res.addr.domain.len = nlen;
+        addrlen = (int)nlen + 2;
+        if (addrlen > (int)sizeof (res.addr.domain.addr)) {
+            LOG_E ("%p socks5 client res.domain.len %u", self, nlen);
+            return -1;
+        }
+        ret = hev_task_io_socket_recv (HEV_SOCKS5 (self)->fd,
+                                       res.addr.domain.addr, addrlen,
+                                       MSG_WAITALL, task_io_yielder, self);
+        break;
+    }
     default:
         LOG_E ("%p socks5 client res.atype %u", self, res.addr.atype);
         return -1;
     }
 
-    ret = hev_task_io_socket_recv (HEV_SOCKS5 (self)->fd, &res.addr.ipv4,
-                                   addrlen, MSG_WAITALL, task_io_yielder, self);
     if (ret <= 0) {
         LOG_E ("%p socks5 client read addr", self);
         return -1;

@@ -36,6 +36,7 @@
 #include "hev-socks5-session-tcp.h"
 #include "hev-socks5-session-udp.h"
 #include "hev-dns-tcp.h"
+#include "hev-fake-ip.h"
 
 #include "hev-socks5-tunnel.h"
 
@@ -358,20 +359,19 @@ lwip_io_task_entry (void *data)
 
         count_up_packet (buf->payload, (unsigned int)s);
 
+        if (hev_fake_ip_handle_packet (buf->payload, (unsigned int)s)) {
+            pbuf_free (buf);
+            continue;
+        }
+
         if (hev_config_get_misc_dns_over_tcp ()) {
             int udp_port;
 
-            if (hev_dns_tcp_handle_packet (buf->payload, (unsigned int)s)) {
-                pbuf_free (buf);
-                continue;
-            }
-
             udp_port = hev_dns_tcp_udp_dst_port (buf->payload, (unsigned int)s);
             if (udp_port >= 0) {
-                /* Upstream relays no UDP: this datagram can never be
-                   delivered, and lwIP would only spawn a UDP session whose
-                   SOCKS5 ASSOCIATE is answered with an empty BND. Drop it
-                   here instead. */
+                /* Upstream relays no UDP: leftover datagrams (QUIC etc.)
+                   cannot be delivered. Drop here instead of lwIP. DNS
+                   UDP:53 is already consumed by fake-ip above. */
                 hev_dns_tcp_udp_drop ((unsigned int)udp_port);
                 hev_dns_tcp_stats_flush ();
                 pbuf_free (buf);
@@ -586,6 +586,7 @@ hev_socks5_tunnel_init (int tun_fd)
     LOG_D ("socks5 tunnel init");
 
     hev_dns_tcp_init ();
+    hev_fake_ip_init ();
     stat_last_ms = now_ms ();
 
     res = tunnel_init (tun_fd);
@@ -629,6 +630,7 @@ hev_socks5_tunnel_fini (void)
     event_task_fini ();
     gateway_fini ();
     tunnel_fini ();
+    hev_fake_ip_fini ();
 
     stat_last_ms = now_ms ();
     st_up_tcp_bytes = 0;

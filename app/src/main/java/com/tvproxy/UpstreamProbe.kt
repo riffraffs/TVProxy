@@ -12,16 +12,15 @@ import java.net.Socket
  * Some LAN-shared SOCKS5 servers are TCP-only (e.g. iOS Loon "网络共享"):
  * they answer the ASSOCIATE request with rep=0 but a zeroed BND.ADDR/PORT
  * (0.0.0.0:0), so relayed datagrams can never reach them. In that case
- * TVProxy falls back to forwarding DNS over TCP instead.
+ * TVProxy drops non-DNS UDP (DNS is always fake-ip locally).
  *
  * Return-value policy:
  * - Connect / greeting failures -> true (assume UDP works). This preserves
  *   today's behaviour for every upstream that was reachable before; if the
  *   server is simply down the mode does not matter.
  * - Once the SOCKS5 greeting succeeded, "no usable UDP relay" (zeroed or
- *   missing BND, or command rejected) -> false, so the DNS-over-TCP mode is
- *   entered. That mode only needs TCP CONNECT, which every SOCKS5 server
- *   supports, so this is safe even for a slow or unusual UDP-capable server.
+ *   missing BND, or command rejected) -> false, so non-DNS UDP is dropped.
+ *   DNS still uses fake-ip and SOCKS5 CONNECT with the domain name.
  */
 object UpstreamProbe {
     private const val TAG = "TvProxyProbe"
