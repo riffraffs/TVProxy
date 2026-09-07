@@ -139,6 +139,17 @@
                     android:textColor="@color/danger"
                     android:textSize="14sp"
                     android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/notice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:maxLines="6"
+                    android:text="@string/notice_tcp_only"
+                    android:textColor="@color/warn"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <TextView

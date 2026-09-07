@@ -8,6 +8,13 @@
                from the tun are forwarded to the same destination via an
                upstream SOCKS5 TCP CONNECT, and the answer is written back
                into the tun as a plain UDP packet.
+
+               While this mode is on every other UDP datagram is dropped at
+               the tun read loop instead of being handed to lwIP: with no UDP
+               relay it can never be delivered, and a lwIP UDP session would
+               only open a doomed SOCKS5 UDP ASSOCIATE against the upstream
+               (connect to 0.0.0.0:0), churning one TCP connection per
+               datagram flow for nothing.
  ============================================================================
  */
 
@@ -16,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -34,23 +42,51 @@
 #define DNS_QUERY_MAX 1400
 #define DNS_PAYLOAD_MAX 1472 /* 1500 MTU - 20 (ip) - 8 (udp) */
 #define DNS_INFLIGHT_MAX 8
+#define DNS_PENDING_MAX 32 /* bounded queue for bursts beyond in-flight */
 #define DNS_CONNECT_TIMEOUT 5000
 #define DNS_IO_TIMEOUT 8000
+#define DNS_STATS_INTERVAL_MS 10000
 
 typedef struct _HevDnsQuery HevDnsQuery;
 
 struct _HevDnsQuery
 {
+    HevDnsQuery *next; /* pending queue link */
     unsigned char query[DNS_QUERY_MAX];
     unsigned int qlen;
     struct in_addr src;
     struct in_addr dns;
     unsigned short src_port;
+    char qname[64]; /* first question name, for diagnostics */
+    unsigned long long t_enqueue; /* monotonic ms */
 };
 
 static int stop;
 static unsigned int inflight;
 static unsigned short ip_id_counter;
+
+static HevDnsQuery *pending_head;
+static HevDnsQuery *pending_tail;
+static unsigned int pending_count;
+
+static unsigned long long stats_last_flush;
+static unsigned int stat_udp_drop_total;
+static unsigned int stat_udp_drop_dns; /* dst :53 that was not consumed */
+static unsigned int stat_udp_drop_quic; /* dst :443 */
+static unsigned int stat_udp_drop_ntp; /* dst :123 */
+static unsigned int stat_udp_drop_mdns; /* dst :5353 */
+static unsigned int stat_udp_drop_other;
+static unsigned int stat_dns_drop_full; /* queue full, query dropped */
+
+static unsigned long long
+now_ms (void)
+{
+    struct timespec ts;
+
+    clock_gettime (CLOCK_MONOTONIC, &ts);
+
+    return (unsigned long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 static int
 io_yielder (HevTaskYieldType type, void *data)
@@ -305,36 +341,119 @@ build_dns_reply (const HevDnsQuery *q, const unsigned char *ans,
 }
 
 static void
+pending_push (HevDnsQuery *q)
+{
+    q->next = NULL;
+    if (pending_tail)
+        pending_tail->next = q;
+    else
+        pending_head = q;
+    pending_tail = q;
+    pending_count++;
+}
+
+static HevDnsQuery *
+pending_pop (void)
+{
+    HevDnsQuery *q = pending_head;
+
+    if (q) {
+        pending_head = q->next;
+        if (!pending_head)
+            pending_tail = NULL;
+        pending_count--;
+        q->next = NULL;
+    }
+
+    return q;
+}
+
+static void
+pending_clear (void)
+{
+    HevDnsQuery *q;
+
+    while ((q = pending_pop ()))
+        free (q);
+}
+
+static void
+stats_flush (int force)
+{
+    unsigned long long now = now_ms ();
+
+    if (!force && (now - stats_last_flush) < DNS_STATS_INTERVAL_MS)
+        return;
+    stats_last_flush = now;
+
+    if (!stat_udp_drop_total && !stat_dns_drop_full)
+        return;
+
+    LOG_I ("[udp] tcp-only drop total=%u dns=%u quic443=%u ntp=%u mdns=%u "
+           "other=%u dns-qfull=%u",
+           stat_udp_drop_total, stat_udp_drop_dns, stat_udp_drop_quic,
+           stat_udp_drop_ntp, stat_udp_drop_mdns, stat_udp_drop_other,
+           stat_dns_drop_full);
+
+    stat_udp_drop_total = 0;
+    stat_udp_drop_dns = 0;
+    stat_udp_drop_quic = 0;
+    stat_udp_drop_ntp = 0;
+    stat_udp_drop_mdns = 0;
+    stat_udp_drop_other = 0;
+    stat_dns_drop_full = 0;
+}
+
+static void
 worker_entry (void *data)
 {
     HevDnsQuery *q = data;
-    struct sockaddr_storage ss;
-    socklen_t slen;
-    unsigned char ans[DNS_PAYLOAD_MAX];
-    unsigned char out[1500];
-    unsigned int anslen = 0;
-    unsigned int outlen;
-    int fd = -1;
 
-    if (!stop && server_sockaddr (&ss, &slen) >= 0)
-        fd = dns_connect ((struct sockaddr *)&ss, slen);
+    for (;;) {
+        struct sockaddr_storage ss;
+        socklen_t slen;
+        unsigned char ans[DNS_PAYLOAD_MAX];
+        unsigned char out[1500];
+        unsigned char *ip4;
+        unsigned int anslen = 0;
+        unsigned int outlen;
+        unsigned long long t1, wait, cost;
+        char ipbuf[16];
+        int fd = -1;
+        int ok = 0;
 
-    if (fd >= 0 && socks5_connect (fd, &q->dns) == 0 &&
-        dns_over_tcp_exchange (fd, q->query, q->qlen, ans, &anslen) == 0) {
-        outlen = (unsigned int)build_dns_reply (q, ans, anslen, out);
-        if (outlen > 0 && !stop &&
-            hev_socks5_tunnel_write_packet (out, outlen) == (int)outlen) {
-            LOG_I ("[dns] tcp ok %u bytes -> %u bytes reply", q->qlen,
-                   anslen);
+        t1 = now_ms ();
+        wait = t1 - q->t_enqueue;
+
+        if (!stop && server_sockaddr (&ss, &slen) >= 0)
+            fd = dns_connect ((struct sockaddr *)&ss, slen);
+
+        if (fd >= 0 && socks5_connect (fd, &q->dns) == 0 &&
+            dns_over_tcp_exchange (fd, q->query, q->qlen, ans, &anslen) == 0) {
+            outlen = (unsigned int)build_dns_reply (q, ans, anslen, out);
+            if (outlen > 0 && !stop &&
+                hev_socks5_tunnel_write_packet (out, outlen) == (int)outlen)
+                ok = 1;
         }
+
+        if (fd >= 0) {
+            hev_task_del_fd (hev_task_self (), fd);
+            close (fd);
+        }
+
+        ip4 = (unsigned char *)&q->dns.s_addr;
+        snprintf (ipbuf, sizeof (ipbuf), "%u.%u.%u.%u", ip4[0], ip4[1],
+                  ip4[2], ip4[3]);
+        cost = now_ms () - t1;
+        LOG_I ("[dns] tcp %s q=%s %s cost=%llu ms wait=%llu ms", ipbuf,
+               q->qname[0] ? q->qname : "?", ok ? "ok" : "fail", cost, wait);
+
+        free (q);
+        q = pending_pop ();
+        if (!q)
+            break;
     }
 
-    if (fd >= 0) {
-        hev_task_del_fd (hev_task_self (), fd);
-        close (fd);
-    }
-
-    free (q);
     if (inflight)
         inflight--;
 }
@@ -348,6 +467,8 @@ parse_dns_query (const unsigned char *ip, unsigned int len,
     unsigned int udp_off;
     unsigned int udp_len;
     unsigned int qlen;
+    unsigned int pos;
+    unsigned int out;
 
     if (len < 28)
         return -1;
@@ -387,6 +508,31 @@ parse_dns_query (const unsigned char *ip, unsigned int len,
     memcpy (&q->dns, ip + 16, 4);
     q->src_port = (unsigned short)(((unsigned int)udp[0] << 8) | udp[1]);
 
+    /* extract the first question name for diagnostics: 12-byte DNS header,
+       then length-prefixed labels until a zero octet */
+    q->qname[0] = 0;
+    pos = 0;
+    out = 0;
+    if (qlen >= 12) {
+        for (;;) {
+            unsigned int label = udp[8 + 12 + pos];
+            unsigned int i;
+
+            if (label == 0)
+                break; /* root terminator: name complete */
+            if (label > 63) /* compression pointer / junk: give up */
+                break;
+            if (pos + 1 + label > qlen - 12)
+                break;
+            if (out && out < sizeof (q->qname) - 1)
+                q->qname[out++] = '.';
+            for (i = 0; i < label && out < sizeof (q->qname) - 1; i++)
+                q->qname[out++] = (char)udp[8 + 12 + pos + 1 + i];
+            pos += 1 + label;
+        }
+    }
+    q->qname[out] = 0;
+
     return 0;
 }
 
@@ -396,12 +542,25 @@ hev_dns_tcp_init (void)
     stop = 0;
     inflight = 0;
     ip_id_counter = 0;
+    pending_head = NULL;
+    pending_tail = NULL;
+    pending_count = 0;
+    stats_last_flush = 0;
+    stat_udp_drop_total = 0;
+    stat_udp_drop_dns = 0;
+    stat_udp_drop_quic = 0;
+    stat_udp_drop_ntp = 0;
+    stat_udp_drop_mdns = 0;
+    stat_udp_drop_other = 0;
+    stat_dns_drop_full = 0;
 }
 
 void
 hev_dns_tcp_stop (void)
 {
     stop = 1;
+    pending_clear ();
+    stats_flush (1);
 }
 
 int
@@ -415,27 +574,93 @@ hev_dns_tcp_handle_packet (const unsigned char *ip, unsigned int len)
         return 0;
     if (!hev_config_get_misc_dns_over_tcp ())
         return 0;
-    if (inflight >= DNS_INFLIGHT_MAX)
-        return 0;
 
     q = malloc (sizeof (*q));
-    if (!q)
+    if (!q) {
+        LOG_W ("[dns] tcp alloc query failed");
         return 1;
+    }
     if (parse_dns_query (ip, len, q) < 0) {
         free (q);
         return 0;
     }
 
-    stack = hev_config_get_misc_task_stack_size ();
-    task = hev_task_new (stack);
-    if (!task) {
+    q->next = NULL;
+    q->t_enqueue = now_ms ();
+
+    if (inflight < DNS_INFLIGHT_MAX) {
+        stack = hev_config_get_misc_task_stack_size ();
+        task = hev_task_new (stack);
+        if (!task) {
+            free (q);
+            return 1;
+        }
+
+        inflight++;
+        hev_task_run (task, worker_entry, q);
+        hev_task_wakeup (task);
+    } else if (pending_count < DNS_PENDING_MAX) {
+        pending_push (q);
+    } else {
+        if (!stat_dns_drop_full)
+            LOG_W ("[dns] tcp queue full, dropping queries");
+        stat_dns_drop_full++;
         free (q);
-        return 1;
+        stats_flush (0);
     }
 
-    inflight++;
-    hev_task_run (task, worker_entry, q);
-    hev_task_wakeup (task);
-
     return 1;
+}
+
+int
+hev_dns_tcp_udp_dst_port (const unsigned char *ip, unsigned int len)
+{
+    unsigned int ihl;
+    unsigned int udp_off;
+
+    if (len < 28)
+        return -1;
+    if ((ip[0] >> 4) != 4)
+        return -1;
+
+    ihl = (unsigned int)(ip[0] & 0x0f) * 4;
+    if (ihl < 20 || ihl > len)
+        return -1;
+    if (ip[9] != 17) /* UDP */
+        return -1;
+
+    udp_off = ihl;
+    if (udp_off + 8 > len)
+        return 0; /* continuation fragment: no UDP header, still UDP */
+
+    return ((unsigned int)ip[udp_off + 2] << 8) | ip[udp_off + 3];
+}
+
+void
+hev_dns_tcp_udp_drop (unsigned int dst_port)
+{
+    stat_udp_drop_total++;
+    switch (dst_port) {
+    case 53:
+        stat_udp_drop_dns++;
+        break;
+    case 443:
+        stat_udp_drop_quic++;
+        break;
+    case 123:
+        stat_udp_drop_ntp++;
+        break;
+    case 5353:
+        stat_udp_drop_mdns++;
+        break;
+    default:
+        stat_udp_drop_other++;
+        break;
+    }
+}
+
+void
+hev_dns_tcp_stats_flush (void)
+{
+    stats_flush (0);
 }

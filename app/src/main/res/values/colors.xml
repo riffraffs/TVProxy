@@ -14,5 +14,6 @@
     <color name="stroke">#1AFFFFFF</color>
     <color name="row">#0AFFFFFF</color>
     <color name="danger">#FFF36B6B</color>
+    <color name="warn">#FFE5B56E</color>
     <color name="selection">#99000000</color>
 </resources>

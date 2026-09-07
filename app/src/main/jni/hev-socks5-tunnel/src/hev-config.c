@@ -37,6 +37,7 @@ static int read_write_timeout = 60000;
 static int limit_nofile = 65535;
 static int log_level = HEV_LOGGER_WARN;
 static int dns_over_tcp;
+static int drop_quic;
 
 static int
 hev_config_parse_tunnel_ipv4 (yaml_document_t *doc, yaml_node_t *base)
@@ -303,6 +304,9 @@ hev_config_parse_misc (yaml_document_t *doc, yaml_node_t *base)
         else if (0 == strcmp (key, "dns-over-tcp"))
             dns_over_tcp = ((0 == strcasecmp (value, "true")) ||
                             (strtoul (value, NULL, 10) == 1));
+        else if (0 == strcmp (key, "drop-quic"))
+            drop_quic = ((0 == strcasecmp (value, "true")) ||
+                         (strtoul (value, NULL, 10) == 1));
     }
 
     return 0;
@@ -542,4 +546,10 @@ int
 hev_config_get_misc_dns_over_tcp (void)
 {
     return dns_over_tcp;
+}
+
+int
+hev_config_get_misc_drop_quic (void)
+{
+    return drop_quic;
 }

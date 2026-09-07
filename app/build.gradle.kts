@@ -12,8 +12,8 @@ android {
         applicationId = "com.tvproxy"
         minSdk = 21
         targetSdk = 29
-        versionCode = 19
-        versionName = "0.1.18"
+        versionCode = 23
+        versionName = "0.1.22"
         ndk {
             // -Pabi=arm64-v8a 只打指定 ABI；不传则三个都打（模拟器需要 x86_64）
             val abi = (project.findProperty("abi") as String?)

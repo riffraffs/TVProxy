@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <signal.h>
 #include <string.h>
+#include <time.h>
 #include <sys/ioctl.h>
 
 #include <lwip/tcp.h>
@@ -49,6 +50,161 @@ static size_t stat_rx_packets;
 static size_t stat_tx_bytes;
 static size_t stat_rx_bytes;
 
+/* per-protocol throughput, for the periodic [stats] log */
+static unsigned long long stat_last_ms;
+static size_t st_up_tcp_bytes;
+static size_t st_up_udp_bytes;
+static size_t st_up_tcp_pkts;
+static size_t st_up_udp_pkts;
+static size_t st_dn_tcp_bytes;
+static size_t st_dn_udp_bytes;
+static size_t st_dn_tcp_pkts;
+static size_t st_dn_udp_pkts;
+
+/* drop-quic mode: UDP/443 (QUIC) is dropped and answered with ICMP port
+   unreachable so clients fall back to TCP promptly */
+static unsigned int stat_quic_dropped;
+static unsigned int stat_quic_icmp;
+static unsigned long long quic_icmp_win_ms;
+static unsigned int quic_icmp_win_n;
+static unsigned short quic_ip_id;
+
+#define QUIC_ICMP_MAX_PER_SEC 8
+
+static unsigned long long
+now_ms (void)
+{
+    struct timespec ts;
+
+    clock_gettime (CLOCK_MONOTONIC, &ts);
+
+    return (unsigned long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static unsigned short
+ip_checksum (const void *buf, unsigned int len)
+{
+    const unsigned char *p = buf;
+    unsigned long sum = 0;
+
+    while (len > 1) {
+        sum += ((unsigned int)p[0] << 8) | p[1];
+        p += 2;
+        len -= 2;
+    }
+    if (len)
+        sum += (unsigned int)p[0] << 8;
+    while (sum >> 16)
+        sum = (sum & 0xffff) + (sum >> 16);
+
+    return (unsigned short)~sum;
+}
+
+/* Build an ICMP destination-unreachable (port unreachable) reply for a
+   dropped QUIC (UDP/443) datagram, quoting the original IP header plus 8
+   bytes of its payload, per RFC 792. Returns the reply length or -1. */
+static int
+icmp_port_unreachable (const unsigned char *ip, unsigned int len,
+                       unsigned char *out, unsigned short *ip_id)
+{
+    unsigned int quote;
+    unsigned int icmp_len;
+    unsigned int total;
+    unsigned short sum;
+
+    if (len < 28)
+        return -1;
+    if (((ip[0] & 0x0f) * 4) != 20) /* no IP options: quoting gets complex */
+        return -1;
+
+    quote = len - 20 > 8 ? 8 : len - 20;
+    icmp_len = 8 + 20 + quote;
+    total = 20 + icmp_len;
+
+    memset (out, 0, total);
+    out[0] = 0x45;
+    out[2] = (unsigned char)(total >> 8);
+    out[3] = (unsigned char)(total & 0xff);
+    out[4] = (unsigned char)(*ip_id >> 8);
+    out[5] = (unsigned char)(*ip_id & 0xff);
+    (*ip_id)++;
+    out[8] = 64;
+    out[9] = 1; /* ICMP */
+    memcpy (out + 12, ip + 16, 4); /* src = original dst */
+    memcpy (out + 16, ip + 12, 4); /* dst = original src */
+    sum = ip_checksum (out, 20);
+    out[10] = (unsigned char)(sum >> 8);
+    out[11] = (unsigned char)(sum & 0xff);
+
+    out[20] = 3;      /* dest unreachable */
+    out[21] = 3;      /* port unreachable */
+    memcpy (out + 28, ip, 20);          /* quoted original IP header */
+    memcpy (out + 48, ip + 20, quote);  /* quoted payload start */
+
+    sum = ip_checksum (out + 20, icmp_len);
+    out[22] = (unsigned char)(sum >> 8);
+    out[23] = (unsigned char)(sum & 0xff);
+
+    return (int)total;
+}
+
+static void
+count_up_packet (const void *buf, size_t len)
+{
+    const unsigned char *ip = buf;
+
+    if (len < 20 || (ip[0] >> 4) != 4)
+        return;
+    if (ip[9] == 6) {
+        st_up_tcp_bytes += len;
+        st_up_tcp_pkts++;
+    } else if (ip[9] == 17) {
+        st_up_udp_bytes += len;
+        st_up_udp_pkts++;
+    }
+}
+
+static void
+stats_flush (void)
+{
+    unsigned long long now = now_ms ();
+    unsigned long long span;
+
+    if ((now - stat_last_ms) < 10000)
+        return;
+    span = now - stat_last_ms;
+    stat_last_ms = now;
+
+    if (!st_up_tcp_bytes && !st_up_udp_bytes && !st_dn_tcp_bytes &&
+        !st_dn_udp_bytes && !stat_quic_dropped)
+        return;
+
+    LOG_I ("[stats] up tcp=%lluKB/s(%llup) udp=%lluKB/s(%llup) "
+           "down tcp=%lluKB/s(%llup) udp=%lluKB/s(%llup) quic_drop=%u "
+           "icmp=%u",
+           (unsigned long long)st_up_tcp_bytes * 1000 / 1024 / span,
+           (unsigned long long)st_up_tcp_pkts,
+           (unsigned long long)st_up_udp_bytes * 1000 / 1024 / span,
+           (unsigned long long)st_up_udp_pkts,
+           (unsigned long long)st_dn_tcp_bytes * 1000 / 1024 / span,
+           (unsigned long long)st_dn_tcp_pkts,
+           (unsigned long long)st_dn_udp_bytes * 1000 / 1024 / span,
+           (unsigned long long)st_dn_udp_pkts, stat_quic_dropped,
+           stat_quic_icmp);
+
+    stat_quic_dropped = 0;
+    stat_quic_icmp = 0;
+
+    st_up_tcp_bytes = 0;
+    st_up_udp_bytes = 0;
+    st_up_tcp_pkts = 0;
+    st_up_udp_pkts = 0;
+    st_dn_tcp_bytes = 0;
+    st_dn_udp_bytes = 0;
+    st_dn_tcp_pkts = 0;
+    st_dn_udp_pkts = 0;
+}
+
 static struct netif netif;
 static struct tcp_pcb *tcp;
 static struct udp_pcb *udp;
@@ -70,7 +226,12 @@ task_io_yielder (HevTaskYieldType type, void *data)
 static err_t
 netif_output_handler (struct netif *netif, struct pbuf *p)
 {
+    const unsigned char *ip0 = NULL;
     ssize_t s;
+
+    if (p->payload && p->len >= 20 &&
+        (((const unsigned char *)p->payload)[0] >> 4) == 4)
+        ip0 = p->payload;
 
     if (p->next) {
         struct iovec iov[512];
@@ -96,6 +257,16 @@ netif_output_handler (struct netif *netif, struct pbuf *p)
 
     stat_rx_packets++;
     stat_rx_bytes += s;
+
+    if (s > 0 && ip0) {
+        if (ip0[9] == 6) {
+            st_dn_tcp_bytes += s;
+            st_dn_tcp_pkts++;
+        } else if (ip0[9] == 17) {
+            st_dn_udp_bytes += s;
+            st_dn_udp_pkts++;
+        }
+    }
 
     return ERR_OK;
 }
@@ -280,10 +451,53 @@ lwip_io_task_entry (void *data)
         stat_tx_packets++;
         stat_tx_bytes += s;
 
-        if (hev_config_get_misc_dns_over_tcp () &&
-            hev_dns_tcp_handle_packet (buf->payload, (unsigned int)s)) {
+        count_up_packet (buf->payload, (unsigned int)s);
+
+        if (!hev_config_get_misc_dns_over_tcp () &&
+            hev_config_get_misc_drop_quic () &&
+            hev_dns_tcp_udp_dst_port (buf->payload, (unsigned int)s) == 443) {
+            /* QUIC probe/flow: the upstream's UDP path is unreliable for the
+               exit in use; drop the datagram and answer ICMP port unreachable
+               so the app falls back to TCP promptly. */
+            unsigned char icmp[128];
+            int ilen;
+
+            stat_quic_dropped++;
+            ilen = icmp_port_unreachable (buf->payload, (unsigned int)s,
+                                          icmp, &quic_ip_id);
+            if (ilen > 0 && now_ms () - quic_icmp_win_ms >= 1000) {
+                quic_icmp_win_ms = now_ms ();
+                quic_icmp_win_n = 0;
+            }
+            if (ilen > 0 && quic_icmp_win_n < QUIC_ICMP_MAX_PER_SEC) {
+                quic_icmp_win_n++;
+                if (hev_socks5_tunnel_write_packet (icmp, (unsigned int)ilen)
+                    == ilen)
+                    stat_quic_icmp++;
+            }
             pbuf_free (buf);
             continue;
+        }
+
+        if (hev_config_get_misc_dns_over_tcp ()) {
+            int udp_port;
+
+            if (hev_dns_tcp_handle_packet (buf->payload, (unsigned int)s)) {
+                pbuf_free (buf);
+                continue;
+            }
+
+            udp_port = hev_dns_tcp_udp_dst_port (buf->payload, (unsigned int)s);
+            if (udp_port >= 0) {
+                /* Upstream relays no UDP: this datagram can never be
+                   delivered, and lwIP would only spawn a UDP session whose
+                   SOCKS5 ASSOCIATE is answered with an empty BND. Drop it
+                   here instead. */
+                hev_dns_tcp_udp_drop ((unsigned int)udp_port);
+                hev_dns_tcp_stats_flush ();
+                pbuf_free (buf);
+                continue;
+            }
         }
 
         hev_task_mutex_lock (&mutex);
@@ -318,6 +532,8 @@ lwip_timer_task_entry (void *data)
 #endif
         }
         hev_task_mutex_unlock (&mutex);
+
+        stats_flush ();
 
         if (hev_list_first (&session_set))
             hev_task_sleep (TCP_TMR_INTERVAL);
@@ -550,6 +766,7 @@ hev_socks5_tunnel_init (int tun_fd)
     LOG_D ("socks5 tunnel init");
 
     hev_dns_tcp_init ();
+    stat_last_ms = now_ms ();
 
     res = tunnel_init (tun_fd);
     if (res < 0)
@@ -597,6 +814,20 @@ hev_socks5_tunnel_fini (void)
     stat_rx_packets = 0;
     stat_tx_bytes = 0;
     stat_rx_bytes = 0;
+    stat_last_ms = now_ms ();
+    st_up_tcp_bytes = 0;
+    st_up_udp_bytes = 0;
+    st_up_tcp_pkts = 0;
+    st_up_udp_pkts = 0;
+    st_dn_tcp_bytes = 0;
+    st_dn_udp_bytes = 0;
+    st_dn_tcp_pkts = 0;
+    st_dn_udp_pkts = 0;
+    stat_quic_dropped = 0;
+    stat_quic_icmp = 0;
+    quic_icmp_win_ms = now_ms ();
+    quic_icmp_win_n = 0;
+    quic_ip_id = 0;
 }
 
 int

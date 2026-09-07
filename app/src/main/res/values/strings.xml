@@ -16,6 +16,7 @@
     <string name="vpn_native_failed">native 启动失败：%1$s</string>
     <string name="crash_last">上次闪退原因：\n%1$s</string>
     <string name="crash_native_hint">上次点「保存并启动」后进程异常退出。请再试一次；若仍闪退，把本页红色报错原文记下。</string>
+    <string name="notice_tcp_only">上游无 UDP 中继：QUIC 与其它 UDP 不可达，DNS 已转走 TCP，但视频类只能回落 TCP、速度受限。建议改用支持 UDP 的代理（如 Clash）。</string>
     <string name="lan_label">本机局域网地址</string>
     <string name="lan_unknown">—</string>
     <string name="hint_dpad">方向键移动焦点 · OK 确认 / 调起键盘</string>

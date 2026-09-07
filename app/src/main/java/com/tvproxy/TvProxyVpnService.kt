@@ -79,6 +79,7 @@ class TvProxyVpnService : VpnService() {
             val config = ProxyPrefs.load(this)
             val dnsOverTcp = !probeUdpRelay(config.host, config.port)
             Log.i(TAG, "upstream udp relay supported=${!dnsOverTcp} dns-over-tcp=$dnsOverTcp")
+            dnsOverTcpRunning.set(dnsOverTcp)
             val dns = dnsServers(dnsOverTcp)
             Log.i(TAG, "establishing tun for ${config.protocol} ${config.host}:${config.port} dns=$dns")
             val builder = Builder()
@@ -125,7 +126,7 @@ class TvProxyVpnService : VpnService() {
                     "HTTP CONNECT not implemented; using SOCKS5 to ${config.host}:${config.port}",
                 )
             }
-            val conf = writeNativeConfig(config, dnsOverTcp)
+            val conf = writeNativeConfig(config, dnsOverTcp, ProxyPrefs.dropQuic(this))
             val fd = pfd.detachFd()
             try {
                 if (!nativeLoaded) {
@@ -237,7 +238,7 @@ class TvProxyVpnService : VpnService() {
         }
     }
 
-    private fun writeNativeConfig(config: ProxyConfig, dnsOverTcp: Boolean): File {        val file = File(cacheDir, "tproxy.yml")
+    private fun writeNativeConfig(config: ProxyConfig, dnsOverTcp: Boolean, dropQuic: Boolean): File {        val file = File(cacheDir, "tproxy.yml")
         val yaml = """
             |tunnel:
             |  mtu: $TUN_MTU
@@ -250,6 +251,7 @@ class TvProxyVpnService : VpnService() {
             |  log-file: '${File(cacheDir, "hev.log").absolutePath.replace("\\", "/")}'
             |  log-level: info
             |  dns-over-tcp: $dnsOverTcp
+            |  drop-quic: $dropQuic
             |  task-stack-size: 1048576
             |
         """.trimMargin()
@@ -265,6 +267,7 @@ class TvProxyVpnService : VpnService() {
     }
 
     private fun teardownLocked() {
+        dnsOverTcpRunning.set(false)
         if (nativeStarted) {
             try {
                 TProxyStopService()
@@ -355,6 +358,9 @@ class TvProxyVpnService : VpnService() {
         const val EXTRA_ERROR = "com.tvproxy.extra.ERROR"
 
         val isRunning = AtomicBoolean(false)
+
+        /** True when the current run is in DNS-over-TCP mode (upstream relays no UDP). */
+        val dnsOverTcpRunning = AtomicBoolean(false)
 
         private const val TAG = "TvProxyVpn"
         private const val SESSION = "TVProxy"
