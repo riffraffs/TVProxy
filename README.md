@@ -62,7 +62,7 @@
 1. **准备上游共享代理**
    - Clash Verge：开启「允许局域网连接」，记录电脑局域网 IP 与**混合端口**（如 `192.168.x.x:7897`）；
    - Loon：仪表页点右上角开启「网络共享」（● 变绿），使用其 **SOCKS5 端口**（如 `192.168.x.x:7221`），并保持 Loon 运行。
-2. **安装 APK**：仓库 `release/` 下 32/64 位 debug 包（`TVProxy-0.9.1-*-debug.apk`），U 盘侧载或 `adb install`。
+2. **安装 APK**：到 [Releases](https://github.com/riffraffs/TVProxy/releases) 按 ABI 下载（64 位 `arm64-v8a`，32 位 `armeabi-v7a`），U 盘侧载或 `adb install`。
 3. **（老款鸿蒙电视）先授予 VPN 权限**——见第 2 节；其它有系统授权弹窗的设备直接在弹窗里选「允许」。
 4. 打开 TVProxy，填上游 IP 与端口 →「保存并启动」。状态胶囊变为「运行中」即成功。
 
@@ -91,7 +91,6 @@ TVProxy/
 │  ├─ src/main/jni/hev-socks5-tunnel/ # native 引擎（lwIP + SOCKS5 + fake-ip）
 │  ├─ src/main/res/                  # 布局 / 文案 / 颜色
 │  └─ build.gradle.kts
-├─ release/                          # 版本化 debug APK（armeabi-v7a / arm64-v8a）
 ├─ TVProxy-VPN授权工具/              # 电脑侧一键授权（grant_vpn.bat + 便携 adb）
 ├─ gradlew / gradle/                 # 标准 Gradle wrapper（仓库内可直接构建）
 ├─ build.gradle.kts                  # 根构建脚本
@@ -100,7 +99,7 @@ TVProxy/
 └─ README.md
 ```
 
-> 不纳入版本控制：`app/build/`（构建产物）、`dist/`（本地历史包）、`tool/`（本地 SDK/NDK/工具链）、`local.properties`。`release/*.apk` 随版本提交。
+> 不纳入版本控制：`app/build/`（构建产物）、`dist/`（APK 分发）、`tool/`（本地 SDK/NDK/工具链）、`local.properties`。安装包在 [GitHub Releases](https://github.com/riffraffs/TVProxy/releases)。
 
 ---
 

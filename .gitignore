@@ -26,11 +26,9 @@ tvproxy_ui.png
 real_tvproxy_ui.png
 icon.png
 
-# --- Packaged APKs (rebuildable from source) ---
+# --- Packaged APKs (rebuildable from source; publish via GitHub Releases) ---
 dist/
-# Versioned debug APKs for GitHub (32/64-bit)
-!release/
-!release/*.apk
+release/
 
 # --- Debug scripts & local tooling (machine-specific, not project source) ---
 /run_build.bat
