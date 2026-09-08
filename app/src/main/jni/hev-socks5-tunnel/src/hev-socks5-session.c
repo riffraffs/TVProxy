@@ -12,6 +12,8 @@
 #include "hev-logger.h"
 #include "hev-config.h"
 #include "hev-socks5-client.h"
+#include "hev-socks5-client-tcp.h"
+#include "hev-http-connect.h"
 
 #include "hev-socks5-session.h"
 
@@ -41,16 +43,36 @@ hev_socks5_session_run (HevSocks5Session *self)
 
     hev_socks5_set_timeout (HEV_SOCKS5 (self), read_write_timeout);
 
-    if (srv->user && srv->pass) {
-        hev_socks5_client_set_auth (HEV_SOCKS5_CLIENT (self), srv->user,
-                                    srv->pass);
-        LOG_D ("%p socks5 client auth %s:%s", self, srv->user, srv->pass);
-    }
+    if (hev_config_get_upstream_protocol () == HEV_CONFIG_UPSTREAM_HTTP) {
+        HevSocks5Addr *addr;
 
-    res = hev_socks5_client_handshake (HEV_SOCKS5_CLIENT (self), srv->pipeline);
-    if (res < 0) {
-        LOG_E ("%p socks5 session handshake", self);
-        return;
+        if (HEV_SOCKS5 (self)->type != HEV_SOCKS5_TYPE_TCP) {
+            LOG_D ("%p http skip non-tcp", self);
+            return;
+        }
+        addr = HEV_SOCKS5_CLIENT_TCP (self)->addr;
+        if (!addr) {
+            LOG_E ("%p http session no addr", self);
+            return;
+        }
+        res = hev_http_connect (HEV_SOCKS5 (self), addr);
+        if (res < 0) {
+            LOG_E ("%p http session handshake", self);
+            return;
+        }
+    } else {
+        if (srv->user && srv->pass) {
+            hev_socks5_client_set_auth (HEV_SOCKS5_CLIENT (self), srv->user,
+                                        srv->pass);
+            LOG_D ("%p socks5 client auth %s:%s", self, srv->user, srv->pass);
+        }
+
+        res = hev_socks5_client_handshake (HEV_SOCKS5_CLIENT (self),
+                                           srv->pipeline);
+        if (res < 0) {
+            LOG_E ("%p socks5 session handshake", self);
+            return;
+        }
     }
 
     iface = HEV_OBJECT_GET_IFACE (self, HEV_SOCKS5_SESSION_TYPE);

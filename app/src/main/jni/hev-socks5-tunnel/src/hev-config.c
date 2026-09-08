@@ -21,6 +21,7 @@
 static unsigned int tun_mtu = 8500;
 
 static HevConfigServer srv;
+static int upstream_protocol = HEV_CONFIG_UPSTREAM_SOCKS5;
 
 static char log_file[1024];
 static int task_stack_size = 86016;
@@ -28,7 +29,6 @@ static int tcp_buffer_size = 65536;
 static int connect_timeout = 5000;
 static int read_write_timeout = 60000;
 static int log_level = HEV_LOGGER_WARN;
-static int dns_over_tcp;
 
 static int
 hev_config_parse_log_level (const char *value)
@@ -87,6 +87,10 @@ hev_config_parse_line (char *line)
 
     if (0 == strcmp (key, "mtu"))
         tun_mtu = (unsigned int)strtoul (value, NULL, 10);
+    else if (0 == strcmp (key, "upstream-protocol"))
+        upstream_protocol = (0 == strcmp (value, "http")) ?
+                                HEV_CONFIG_UPSTREAM_HTTP :
+                                HEV_CONFIG_UPSTREAM_SOCKS5;
     else if (0 == strcmp (key, "socks5-address"))
         strncpy (srv.addr, value, sizeof (srv.addr) - 1);
     else if (0 == strcmp (key, "socks5-port"))
@@ -97,9 +101,6 @@ hev_config_parse_line (char *line)
         strncpy (log_file, value, sizeof (log_file) - 1);
     else if (0 == strcmp (key, "log-level"))
         log_level = hev_config_parse_log_level (value);
-    else if (0 == strcmp (key, "dns-over-tcp"))
-        dns_over_tcp = ((0 == strcmp (value, "true")) ||
-                        (strtoul (value, NULL, 10) == 1));
     else if (0 == strcmp (key, "task-stack-size"))
         task_stack_size = (int)strtoul (value, NULL, 10);
 
@@ -163,6 +164,12 @@ hev_config_get_socks5_server (void)
 }
 
 int
+hev_config_get_upstream_protocol (void)
+{
+    return upstream_protocol;
+}
+
+int
 hev_config_get_misc_task_stack_size (void)
 {
     return task_stack_size;
@@ -199,10 +206,4 @@ int
 hev_config_get_misc_log_level (void)
 {
     return log_level;
-}
-
-int
-hev_config_get_misc_dns_over_tcp (void)
-{
-    return dns_over_tcp;
 }

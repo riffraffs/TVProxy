@@ -6,8 +6,8 @@
 
 SRCFILES := \
     $(SRCDIR)/hev-config.c \
-    $(SRCDIR)/hev-dns-tcp.c \
     $(SRCDIR)/hev-fake-ip.c \
+    $(SRCDIR)/hev-http-connect.c \
     $(SRCDIR)/hev-jni.c \
     $(SRCDIR)/hev-main.c \
     $(SRCDIR)/hev-socks5-session.c \

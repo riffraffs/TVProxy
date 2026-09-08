@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 
 #include <hev-task.h>
 #include <hev-task-io.h>
@@ -74,6 +75,9 @@ hev_socks5_socket (int type)
     if (type == SOCK_DGRAM) {
         res = udp_recv_buffer_size;
         setsockopt (fd, SOL_SOCKET, SO_RCVBUF, &res, sizeof (res));
+    } else if (type == SOCK_STREAM) {
+        int one = 1;
+        setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof (one));
     }
 
     return fd;

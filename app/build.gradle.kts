@@ -20,15 +20,15 @@ android {
         applicationId = "com.tvproxy"
         minSdk = 21
         targetSdk = 29
-        versionCode = 30
-        versionName = "0.9.1"
+        versionCode = 34
+        versionName = "1.0.0"
         ndk {
-            // -Pabi=arm64-v8a 只打指定 ABI；不传则三个都打（模拟器需要 x86_64）
+            // -Pabi=arm64-v8a 只打指定 ABI；不传则打真机 ABI
             val abi = (project.findProperty("abi") as String?)
                 ?.split(",")
                 ?.map { it.trim() }
                 ?.filter { it.isNotEmpty() }
-            abiFilters += abi ?: listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            abiFilters += abi ?: listOf("armeabi-v7a", "arm64-v8a")
         }
     }
 

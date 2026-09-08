@@ -32,7 +32,6 @@ release/
 
 # --- Debug scripts & local tooling (machine-specific, not project source) ---
 /run_build.bat
-/run_emu.bat
 /ui_build.init.gradle
 /adb/
 /tool/

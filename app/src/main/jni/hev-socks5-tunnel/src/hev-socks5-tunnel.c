@@ -35,7 +35,6 @@
 #include "hev-tunnel.h"
 #include "hev-socks5-session-tcp.h"
 #include "hev-socks5-session-udp.h"
-#include "hev-dns-tcp.h"
 #include "hev-fake-ip.h"
 
 #include "hev-socks5-tunnel.h"
@@ -248,6 +247,8 @@ tcp_accept_handler (void *arg, struct tcp_pcb *pcb, err_t err)
     if (!tcp)
         return ERR_MEM;
 
+    tcp_nagle_disable (pcb);
+
     stack_size = hev_config_get_misc_task_stack_size ();
     task = hev_task_new (stack_size);
     if (!task) {
@@ -274,6 +275,15 @@ udp_recv_handler (void *arg, struct udp_pcb *pcb, struct pbuf *p,
     HevTask *task;
 
     if (!run) {
+        if (p)
+            pbuf_free (p);
+        udp_remove (pcb);
+        return;
+    }
+
+    if (hev_config_get_upstream_protocol () == HEV_CONFIG_UPSTREAM_HTTP) {
+        if (p)
+            pbuf_free (p);
         udp_remove (pcb);
         return;
     }
@@ -311,7 +321,6 @@ event_task_entry (void *data)
     hev_task_io_read (event_fds[0], &val, sizeof (val), NULL, NULL);
 
     run = 0;
-    hev_dns_tcp_stop ();
     node = hev_list_first (&session_set);
     for (; node; node = hev_list_node_next (node)) {
         HevSocks5SessionData *sd;
@@ -364,18 +373,16 @@ lwip_io_task_entry (void *data)
             continue;
         }
 
-        if (hev_config_get_misc_dns_over_tcp ()) {
-            int udp_port;
+        if (hev_config_get_upstream_protocol () == HEV_CONFIG_UPSTREAM_HTTP) {
+            const unsigned char *ip = buf->payload;
+            unsigned int ihl;
 
-            udp_port = hev_dns_tcp_udp_dst_port (buf->payload, (unsigned int)s);
-            if (udp_port >= 0) {
-                /* Upstream relays no UDP: leftover datagrams (QUIC etc.)
-                   cannot be delivered. Drop here instead of lwIP. DNS
-                   UDP:53 is already consumed by fake-ip above. */
-                hev_dns_tcp_udp_drop ((unsigned int)udp_port);
-                hev_dns_tcp_stats_flush ();
-                pbuf_free (buf);
-                continue;
+            if ((unsigned int)s >= 28 && (ip[0] >> 4) == 4 && ip[9] == 17) {
+                ihl = (unsigned int)(ip[0] & 0x0f) * 4;
+                if (ihl >= 20 && (unsigned int)s >= ihl + 8) {
+                    pbuf_free (buf);
+                    continue;
+                }
             }
         }
 
@@ -585,7 +592,6 @@ hev_socks5_tunnel_init (int tun_fd)
 
     LOG_D ("socks5 tunnel init");
 
-    hev_dns_tcp_init ();
     hev_fake_ip_init ();
     stat_last_ms = now_ms ();
 

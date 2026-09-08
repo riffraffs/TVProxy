@@ -144,16 +144,30 @@ hev_socks5_session_udp_fwd_b (HevSocks5SessionUDP *self)
     buf->len = res;
     buf->tot_len = res;
 
-    res = hev_socks5_addr_into_lwip (&addr, &saddr, &port);
-    if (res < 0) {
-        LOG_D ("%p socks5 session udp fwd b addr", self);
-        pbuf_free (buf);
-        return -1;
-    }
+    /*
+     * Fake-ip destinations: App connect()'d UDP/QUIC to 198.18.x. Clash's
+     * SOCKS5 UDP header carries the real IP; writing that as the tun source
+     * makes the kernel drop the reply. Keep pcb->local_ip (the fake address).
+     * Also skip into_lwip so a domain ATYP does not discard the payload.
+     */
+    if (self->pcb && IP_IS_V4 (&self->pcb->local_ip) &&
+        hev_fake_ip_in_range (
+            ip4_addr_get_u32 (ip_2_ip4 (&self->pcb->local_ip)))) {
+        hev_task_mutex_lock (self->mutex);
+        err = udp_send (self->pcb, buf);
+        hev_task_mutex_unlock (self->mutex);
+    } else {
+        res = hev_socks5_addr_into_lwip (&addr, &saddr, &port);
+        if (res < 0) {
+            LOG_D ("%p socks5 session udp fwd b addr", self);
+            pbuf_free (buf);
+            return -1;
+        }
 
-    hev_task_mutex_lock (self->mutex);
-    err = udp_sendfrom (self->pcb, buf, &saddr, port);
-    hev_task_mutex_unlock (self->mutex);
+        hev_task_mutex_lock (self->mutex);
+        err = udp_sendfrom (self->pcb, buf, &saddr, port);
+        hev_task_mutex_unlock (self->mutex);
+    }
     pbuf_free (buf);
 
     if (err != ERR_OK) {

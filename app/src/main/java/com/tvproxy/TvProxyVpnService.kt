@@ -73,9 +73,6 @@ class TvProxyVpnService : VpnService() {
         synchronized(runningLock) {
             teardownLocked()
             val config = ProxyPrefs.load(this)
-            val dnsOverTcp = !probeUdpRelay(config.host, config.port)
-            Log.i(TAG, "upstream udp relay supported=${!dnsOverTcp} dns-over-tcp=$dnsOverTcp")
-            dnsOverTcpRunning.set(dnsOverTcp)
             val dns = dnsServers()
             Log.i(TAG, "establishing tun for ${config.protocol} ${config.host}:${config.port} dns=$dns")
             val builder = Builder()
@@ -116,13 +113,7 @@ class TvProxyVpnService : VpnService() {
                 )
                 return false
             }
-            if (config.protocol != ProxyConfig.PROTOCOL_SOCKS5) {
-                Log.w(
-                    TAG,
-                    "HTTP CONNECT not implemented; using SOCKS5 to ${config.host}:${config.port}",
-                )
-            }
-            val conf = writeNativeConfig(config, dnsOverTcp)
+            val conf = writeNativeConfig(config)
             val fd = pfd.detachFd()
             try {
                 if (!nativeLoaded) {
@@ -159,37 +150,17 @@ class TvProxyVpnService : VpnService() {
         return listOf(DNS_BAIT)
     }
 
-    /**
-     * Run the UDP-relay probe off the main thread (network is banned on the
-     * main thread) and wait up to 4s for its result. On timeout assume the
-     * upstream supports UDP, keeping the historic default.
-     */
-    private fun probeUdpRelay(host: String, port: Int): Boolean {
-        var result = true
-        val thread = Thread {
-            result = UpstreamProbe.supportsUdpRelay(host, port)
-        }
-        thread.start()
-        return try {
-            thread.join(4000)
-            result
-        } catch (e: Throwable) {
-            Log.w(TAG, "udp probe interrupted", e)
-            true
-        }
-    }
-
-    private fun writeNativeConfig(config: ProxyConfig, dnsOverTcp: Boolean): File {
+    private fun writeNativeConfig(config: ProxyConfig): File {
         val file = File(cacheDir, "tproxy.conf")
         val logPath = File(cacheDir, "hev.log").absolutePath.replace("\\", "/")
         val conf = buildString {
             appendLine("mtu=$TUN_MTU")
+            appendLine("upstream-protocol=${config.protocol}")
             appendLine("socks5-address=${config.host}")
             appendLine("socks5-port=${config.port}")
             appendLine("socks5-udp=udp")
             appendLine("log-file=$logPath")
             appendLine("log-level=info")
-            appendLine("dns-over-tcp=$dnsOverTcp")
             appendLine("task-stack-size=262144")
         }
         file.writeText(conf)
@@ -204,7 +175,6 @@ class TvProxyVpnService : VpnService() {
     }
 
     private fun teardownLocked() {
-        dnsOverTcpRunning.set(false)
         if (nativeStarted) {
             try {
                 TProxyStopService()
@@ -292,9 +262,6 @@ class TvProxyVpnService : VpnService() {
         const val EXTRA_ERROR = "com.tvproxy.extra.ERROR"
 
         val isRunning = AtomicBoolean(false)
-
-        /** True when the current run's upstream relays no UDP (Loon etc.). */
-        val dnsOverTcpRunning = AtomicBoolean(false)
 
         private const val TAG = "TvProxyVpn"
         private const val SESSION = "TVProxy"

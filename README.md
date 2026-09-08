@@ -1,8 +1,7 @@
 # TVProxy
 
-让华为智慧屏 / 电视走「局域网共享代理」的全局代理客户端：电视上的所有流量经内置 VPN（VpnService）统一接管后，
-转发到电脑或手机开启的局域网共享代理出口。免 root、免在电视上装 Clash等软件进行分流导致性能不足。
-
+项目主要针对华为智慧屏v65进行测试。
+但理论上，其他安卓电视也可以使用。
 > **电视不装代理软件，只连一个“共享代理地址”，就能让电视 App 的流量走你的代理。**
 ---
 
@@ -10,16 +9,16 @@
 
 - **目标平台**：华为智慧屏 V 系列（鸿蒙 2.0，AOSP 兼容层，约 API 29）；同类 Android TV 亦可。遥控器操作，适配 720p / 1080p / 4K。
 - **解决的问题**：电视「Wi-Fi 没有配置高级代理」入口；不想在电视上安装、维护 Clash；手边已有电脑 **Clash Verge（mihomo）** 或 iPhone **Loon** 局域网共享代理。
-- **原理**：`VpnService` 建 tun（`10.0.0.2/24`，路由 `0.0.0.0/0`，仅 IPv4，MTU 1500）→ fake-ip 把 DNS 还原成域名 → `hev-socks5-tunnel`（lwIP）→ 上游 SOCKS5 带域名。
+- **原理**：`VpnService` 建 tun（`10.0.0.2/24`，路由 `0.0.0.0/0`，仅 IPv4，MTU 1500）→ fake-ip 把 DNS 还原成域名 → `hev-socks5-tunnel`（lwIP）→ 上游 SOCKS5 带域名，或 HTTP CONNECT（请求目标为域名）。
 
 **兼容性与边界**
 
 | 项目 | 说明 |
 |------|------|
-| 上游协议 | **仅 SOCKS5**。界面上的“HTTP”暂未实现 |
+| 上游协议 | SOCKS5（TCP + UDP）或 HTTP CONNECT（仅 TCP）。4K / QUIC 用 SOCKS5；HTTP 无 UDP，SmartTube 会落到 OkHttp |
+| 界面 | 左侧状态卡「本机局域网地址」行右侧显示当前版本（如 `v1.0.0`） |
 | 已测试上游 | **Clash Verge（mihomo）局域网共享、iOS Loon 局域网共享** |
 | DNS | 仅 fake-ip：拦截 tun 上 UDP:53，本地答 `198.18.x`，SOCKS5 把**域名**交给 Clash/Loon 解析 |
-| Loon 限制 | 共享 SOCKS5 **没有 UDP 中继**。QUIC 等 UDP 不可用，仅 TCP；看视频请用 Clash |
 
 **工作原理（简）**
 
@@ -28,9 +27,9 @@
           ├─ UDP:53 ──► fake-ip（198.18.x ↔ 域名）
           └─ TCP/UDP ──► hev-socks5-tunnel
                           SOCKS5 ATYP=域名 ──► Clash / Loon
+                          HTTP CONNECT 带域名 ──► Clash HTTP 口（非 DNS UDP 丢弃）
 ```
 
-- 每次「保存并启动」会探测上游是否支持 UDP 中继。无 UDP（如 Loon）时丢掉非 DNS UDP，并显示黄条。Clash ↔ Loon 切换只需改地址/端口再保存一次。
 ---
 
 ## 2. 授权工具使用方法
@@ -60,9 +59,9 @@
 **快速开始（电视侧）**
 
 1. **准备上游共享代理**
-   - Clash Verge：开启「允许局域网连接」，记录电脑局域网 IP 与**混合端口**（如 `192.168.x.x:7897`）；
+   - Clash Verge：开启「允许局域网连接」，记录电脑局域网 IP 与**混合端口**（如 `192.168.x.x:10801`）；要 4K/QUIC 选类型 SOCKS5；纯 HTTP 口才选 HTTP。
    - Loon：仪表页点右上角开启「网络共享」（● 变绿），使用其 **SOCKS5 端口**（如 `192.168.x.x:7221`），并保持 Loon 运行。
-2. **安装 APK**：到 [Releases](https://github.com/riffraffs/TVProxy/releases) 按 ABI 下载（64 位 `arm64-v8a`，32 位 `armeabi-v7a`），U 盘侧载或 `adb install`。
+2. **安装 APK**：到 [Releases](https://github.com/riffraffs/TVProxy/releases) 按 ABI 下载当前版（如 `TVProxy-1.0.0-arm64-v8a-debug.apk` / `…-armeabi-v7a-debug.apk`），U 盘侧载或 `adb install`。
 3. **（老款鸿蒙电视）先授予 VPN 权限**——见第 2 节；其它有系统授权弹窗的设备直接在弹窗里选「允许」。
 4. 打开 TVProxy，填上游 IP 与端口 →「保存并启动」。状态胶囊变为「运行中」即成功。
 
@@ -73,7 +72,7 @@
 3. 构建（仓库已含标准 Gradle wrapper，首次运行会自动下载 Gradle 8.x）：
 
    ```bat
-   gradlew.bat :app:assembleDebug                     :: 默认编 armeabi-v7a / arm64-v8a / x86_64
+   gradlew.bat :app:assembleDebug                     :: 默认编 armeabi-v7a / arm64-v8a（真机）
    gradlew.bat :app:assembleDebug -Pabi=arm64-v8a     :: 仅编目标 ABI，更快
    ```
 
@@ -87,7 +86,7 @@
 ```
 TVProxy/
 ├─ app/                              # Android 应用（Kotlin + JNI/NDK）
-│  ├─ src/main/java/com/tvproxy/     # Kotlin 源码（UI / 配置 / VpnService / 上游探测 / VPN 授权）
+│  ├─ src/main/java/com/tvproxy/     # Kotlin 源码（UI / 配置 / VpnService / VPN 授权）
 │  ├─ src/main/jni/hev-socks5-tunnel/ # native 引擎（lwIP + SOCKS5 + fake-ip）
 │  ├─ src/main/res/                  # 布局 / 文案 / 颜色
 │  └─ build.gradle.kts
@@ -107,5 +106,6 @@ TVProxy/
 
 **Clash Verge（mihomo）——推荐，YouTube 4K 可流畅播放**
 
-**Loon——不适合看视频，只适合轻量/网页**
-- 考虑优化
+**Loon**
+经测试后猜想，ios系统在息屏后可能会进入wifi休眠等省电状态，导致连接loon的socks连接会断联，如果想使用，需要保持ios系统不息屏。
+安卓手机没有这个问题，但是没有测试是否支持。

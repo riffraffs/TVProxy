@@ -36,7 +36,6 @@ class MainActivity : Activity() {
     private lateinit var octets: List<EditText>
     private lateinit var port: EditText
     private lateinit var errorView: TextView
-    private lateinit var noticeView: TextView
     private lateinit var saveBtn: Button
     private lateinit var stopBtn: Button
 
@@ -59,6 +58,8 @@ class MainActivity : Activity() {
         pill = findViewById(R.id.pill)
         pillLed = findViewById(R.id.pill_led)
         lanIp = findViewById(R.id.lan_ip)
+        findViewById<TextView>(R.id.app_version).text =
+            getString(R.string.app_version, installedVersionName())
         protocolRow = findViewById(R.id.protocol)
         protocolValue = findViewById(R.id.protocol_value)
         octets = listOf(
@@ -70,7 +71,6 @@ class MainActivity : Activity() {
         port = findViewById(R.id.port)
         errorView = findViewById(R.id.error)
         errorView.movementMethod = ScrollingMovementMethod.getInstance()
-        noticeView = findViewById(R.id.notice)
         saveBtn = findViewById(R.id.btn_save)
         stopBtn = findViewById(R.id.btn_stop)
 
@@ -345,6 +345,14 @@ class MainActivity : Activity() {
         startService(Intent(this, TvProxyVpnService::class.java).setAction(TvProxyVpnService.ACTION_STOP))
     }
 
+    private fun installedVersionName(): String {
+        return try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (_: Throwable) {
+            null
+        }?.takeIf { it.isNotBlank() } ?: "—"
+    }
+
     private fun bindConfig(config: ProxyConfig) {
         protocolValue.text = protocolLabel(config.protocol)
         val parts = config.host.split('.')
@@ -373,8 +381,6 @@ class MainActivity : Activity() {
             ProxyPrefs.clearStartAttempt(this)
             errorView.visibility = View.GONE
         }
-        noticeView.visibility =
-            if (running && TvProxyVpnService.dnsOverTcpRunning.get()) View.VISIBLE else View.GONE
         statusView.setText(if (running) R.string.status_running else R.string.status_idle)
         @Suppress("DEPRECATION")
         statusView.setTextColor(resources.getColor(if (running) R.color.ok else R.color.muted))
