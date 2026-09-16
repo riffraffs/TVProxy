@@ -10,21 +10,7 @@
 #ifndef __HEV_TUNNEL_H__
 #define __HEV_TUNNEL_H__
 
-#if defined(__linux__)
 #include "hev-tunnel-linux.h"
-#endif /* __linux__ */
-
-#if defined(__FreeBSD__)
-#include "hev-tunnel-freebsd.h"
-#endif /* __FreeBSD__ */
-
-#if defined(__NetBSD__)
-#include "hev-tunnel-netbsd.h"
-#endif /* __NetBSD__ */
-
-#if defined(__APPLE__) || defined(__MACH__)
-#include "hev-tunnel-macos.h"
-#endif /* __APPLE__ || __MACH__ */
 
 int hev_tunnel_open (const char *name, int multi_queue);
 void hev_tunnel_close (int fd);

@@ -32,3 +32,9 @@ hev_calloc (size_t nmemb, size_t size)
 {
     return calloc (nmemb, size);
 }
+
+unsigned int
+lwip_port_rand (void)
+{
+    return (unsigned int)rand ();
+}
